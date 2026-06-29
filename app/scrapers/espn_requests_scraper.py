@@ -1,0 +1,231 @@
+import time, requests, re
+from datetime import datetime
+from typing import List, Dict
+from app.scrapers.base import BaseScraper
+STADIUMS = {227: {'name': 'Estadio Azteca', 'city': 'Ciudad de México'}, 226: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 216: {'name': 'Estadio Jalisco', 'city': 'Guadalajara'}, 15720: {'name': 'Estadio Alfonso Lastras', 'city': 'San Luis Potosí'}, 218: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 17851: {'name': 'Estadio Olímpico Benito Juárez', 'city': 'Ciudad Juárez'}, 219: {'name': 'Estadio Akron', 'city': 'Zapopan'}, 228: {'name': 'Estadio León', 'city': 'León'}, 220: {'name': 'Estadio BBVA', 'city': 'Guadalupe'}, 229: {'name': 'Estadio Victoria', 'city': 'Aguascalientes'}, 234: {'name': 'Estadio Hidalgo', 'city': 'Pachuca'}, 231: {'name': 'Estadio Cuauhtémoc', 'city': 'Puebla'}, 233: {'name': 'Estadio Olímpico Universitario', 'city': 'Ciudad de México'}, 222: {'name': 'Estadio Corregidora', 'city': 'Querétaro'}, 225: {'name': 'Estadio Corona', 'city': 'Torreón'}, 232: {'name': 'Estadio Universitario', 'city': 'San Nicolás de los Garza'}, 10125: {'name': 'Estadio Caliente', 'city': 'Tijuana'}, 223: {'name': 'Estadio Nemesio Díez', 'city': 'Toluca'}}
+
+class ESPNRequestsScraper(BaseScraper):
+    def __init__(self):
+        self._teams=[]
+        self._headers={"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    @property
+    def source_name(self): return "espn_requests"
+    def _get_json(self, url, params=None):
+        r=requests.get(url, headers=self._headers, params=params, timeout=20)
+        r.raise_for_status()
+        return r.json()
+    def get_teams(self) -> List[Dict]:
+        data=self._get_json("https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/teams", {"region":"mx","lang":"es"})
+        teams=[]
+        for sport in data.get("sports", []):
+            for league in sport.get("leagues", []):
+                for t in league.get("teams", []):
+                    team=t.get("team", {})
+                    venue=team.get("venue", {})
+                    teams.append({"id":int(team.get("id")), "name":team.get("displayName", team.get("name", "")), "short_name":team.get("abbreviation", ""), "city":team.get("location", ""), "colors":team.get("color", ""), "stadium_name":STADIUMS.get(int(team.get("id")), {}).get("name"), "venue":venue})
+        self._teams=teams
+        return teams
+    def get_standings(self) -> List[Dict]:
+        data=self._get_json("https://site.api.espn.com/apis/v2/sports/soccer/mex.1/standings", {"region":"mx","lang":"es"})
+        def g(stats, names):
+            for n in names:
+                if n in stats: return stats[n]
+            return 0
+        standings=[]
+        for child in data.get("children", []):
+            for i, entry in enumerate(child.get("standings", {}).get("entries", [])):
+                team=entry.get("team", {})
+                stats={s.get("name"): s.get("value") for s in entry.get("stats", [])}
+                standings.append({"position":int(g(stats, ["rank", "order"])) or i+1, "team_name":team.get("displayName", team.get("name", "")), "played":int(g(stats, ["gamesPlayed", "games"])), "won":int(g(stats, ["wins"])), "drawn":int(g(stats, ["ties", "draws"])), "lost":int(g(stats, ["losses"])), "goals_for":int(g(stats, ["pointsFor", "goalsFor"])), "goals_against":int(g(stats, ["pointsAgainst", "goalsAgainst"])), "goal_difference":int(g(stats, ["pointDifferential", "goalDifference"])), "points":int(g(stats, ["points"]))})
+        return standings
+    def get_stadiums(self) -> List[Dict]:
+        teams = self._teams or self.get_teams()
+        used = set()
+        result = []
+        for tid in {t["id"] for t in teams}:
+            s = STADIUMS.get(tid)
+            if s and s["name"] not in used:
+                used.add(s["name"])
+                result.append(s)
+        return result
+    def get_players(self) -> List[Dict]:
+        teams=self._teams or self.get_teams()
+        if not teams: return []
+        players=[]
+        for team in teams:
+            tid=team["id"]
+            try:
+                data=self._get_json(f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/teams/{tid}/roster", {"region":"mx","lang":"es"})
+            except Exception as e:
+                print(f"⚠️ roster {tid}: {e}")
+                continue
+            for ath in data.get("athletes", []):
+                players.append({"id":int(ath.get("id")) if ath.get("id") else None, "name":ath.get("displayName", ""), "team_name":team["name"], "position":(ath.get("position") or {}).get("abbreviation") or (ath.get("position") or {}).get("name"), "number":int(ath.get("jersey")) if ath.get("jersey") not in (None, "") else None, "nationality":(ath.get("country") or {}).get("name") if ath.get("country") else None, "birth_date":ath.get("dateOfBirth"), "photo_url":(ath.get("headshot") or {}).get("href") if ath.get("headshot") else None})
+            time.sleep(0.15)
+        return players
+    def get_matches(self, season_id: int = None) -> List[Dict]:
+        teams=self._teams or self.get_teams()
+        if not teams: return []
+        tnames={t["name"] for t in teams}
+        matches={}
+        def ps(v):
+            if v is None or v=="": return None
+            try: return int(v)
+            except (ValueError, TypeError): return None
+        ranges=[("20250701","20250731"),("20250801","20250831"),("20250901","20250930"),("20251001","20251031"),("20251101","20251130"),("20251201","20251231")]
+        for start, end in ranges:
+            url=f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard?region=mx&lang=es&dates={start}-{end}"
+            try:
+                data=self._get_json(url)
+            except Exception as e:
+                print(f"⚠️ {start}-{end}: {e}")
+                continue
+            for ev in data.get("events", []):
+                eid=ev.get("id")
+                if not eid or eid in matches: continue
+                comp=ev.get("competitions", [{}])[0]
+                home=next((c for c in comp.get("competitors", []) if c.get("homeAway")=="home"), {})
+                away=next((c for c in comp.get("competitors", []) if c.get("homeAway")=="away"), {})
+                hn=home.get("team", {}).get("displayName", "")
+                an=away.get("team", {}).get("displayName", "")
+                if hn not in tnames or an not in tnames: continue
+                st=ev.get("status", {}).get("type", {})
+                status="finished" if st.get("completed") else "live" if st.get("state")=="in" else "scheduled"
+                rd=ev.get("date"); md=None
+                if rd:
+                    try: md=datetime.fromisoformat(rd.replace("Z","+00:00"))
+                    except: pass
+                matches[eid]={"event_id": eid, "home_team_id":int(home.get("team", {}).get("id")) if home.get("team", {}).get("id") else None, "away_team_id":int(away.get("team", {}).get("id")) if away.get("team", {}).get("id") else None, "home_team":hn, "away_team":an, "home_score":ps(home.get("score")), "away_score":ps(away.get("score")), "match_date":md, "status":status, "week":ev.get("week", {}).get("number")}
+            time.sleep(0.15)
+        return list(matches.values())
+
+    def get_top_scorers(self, season_name="2025") -> List[Dict]:
+        matches = self.get_matches()
+        scorers = {}
+        for match in matches:
+            eid = match.get("event_id")
+            if not eid or match.get("status") != "finished":
+                continue
+            try:
+                data = self._get_json(f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={eid}")
+            except Exception as e:
+                print(f"⚠️ summary {eid}: {e}")
+                continue
+            for event in data.get("keyEvents", []):
+                if not event.get("scoringPlay"):
+                    continue
+                participants = event.get("participants", [])
+                if not participants:
+                    continue
+                scorer = participants[0].get("athlete", {})
+                team_name = event.get("team", {}).get("displayName") or match.get("home_team") or match.get("away_team")
+                key = (scorer.get("displayName"), team_name)
+                scorers.setdefault(key, {"player": scorer.get("displayName"), "team": team_name, "goals": 0})
+                scorers[key]["goals"] += 1
+            time.sleep(0.15)
+        result = sorted(scorers.values(), key=lambda x: x["goals"], reverse=True)
+        for r in result:
+            r.update({"matches": None, "assists": None, "penalties": None, "season": season_name})
+        return result
+
+    def get_live_matches(self) -> List[Dict]:
+        today = datetime.now().strftime("%Y%m%d")
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard?region=mx&lang=es&dates={today}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            print(f"⚠️ live matches: {e}")
+            return []
+        live = []
+        for ev in data.get("events", []):
+            st = ev.get("status", {}).get("type", {})
+            if st.get("state") != "in":
+                continue
+            comp = ev.get("competitions", [{}])[0]
+            home = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "home"), {})
+            away = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "away"), {})
+            if not home or not away:
+                continue
+            live.append({
+                "event_id": ev.get("id"),
+                "home_team": home.get("team", {}).get("displayName"),
+                "away_team": away.get("team", {}).get("displayName"),
+                "home_score": int(home.get("score")) if home.get("score") not in (None, "") else 0,
+                "away_score": int(away.get("score")) if away.get("score") not in (None, "") else 0,
+                "status": "live",
+                "match_date": ev.get("date"),
+                "clock": ev.get("status", {}).get("displayClock"),
+                "period": ev.get("status", {}).get("period"),
+            })
+        return live
+
+    def get_matches_by_date(self, date_str: str) -> List[Dict]:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard?region=mx&lang=es&dates={date_str}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            print(f"⚠️ matches by date {date_str}: {e}")
+            return []
+        matches = []
+        for ev in data.get("events", []):
+            comp = ev.get("competitions", [{}])[0]
+            home = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "home"), {})
+            away = next((c for c in comp.get("competitors", []) if c.get("homeAway") == "away"), {})
+            if not home or not away:
+                continue
+            st = ev.get("status", {}).get("type", {})
+            status = "finished" if st.get("completed") else "live" if st.get("state") == "in" else "scheduled"
+            matches.append({
+                "event_id": ev.get("id"),
+                "home_team": home.get("team", {}).get("displayName"),
+                "away_team": away.get("team", {}).get("displayName"),
+                "home_score": int(home.get("score")) if home.get("score") not in (None, "") else None,
+                "away_score": int(away.get("score")) if away.get("score") not in (None, "") else None,
+                "status": status,
+                "match_date": ev.get("date"),
+                "clock": ev.get("status", {}).get("displayClock"),
+                "period": ev.get("status", {}).get("period"),
+            })
+        return matches
+    def get_match_stats(self, event_id: str) -> List[Dict]:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={event_id}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            print(f"⚠️ match stats {event_id}: {e}")
+            return []
+        stats = []
+        for team in data.get("boxscore", {}).get("teams", []):
+            team_name = team.get("team", {}).get("displayName")
+            team_stats = {s.get("name"): s.get("displayValue") for s in team.get("statistics", [])}
+            def _num(key, default=None):
+                v = team_stats.get(key)
+                if v is None:
+                    return default
+                try:
+                    return int(v)
+                except ValueError:
+                    try:
+                        return float(v)
+                    except ValueError:
+                        return default
+            stats.append({
+                "team_name": team_name,
+                "possession": _num("possessionPct"),
+                "shots": _num("totalShots"),
+                "shots_on_target": _num("shotsOnTarget"),
+                "corners": _num("wonCorners"),
+                "fouls": _num("foulsCommitted"),
+                "yellow_cards": _num("yellowCards"),
+                "red_cards": _num("redCards"),
+                "offsides": _num("offsides"),
+                "saves": _num("saves"),
+                "passes": _num("accuratePasses"),
+                "total_passes": _num("totalPasses"),
+                "tackles": _num("effectiveTackles"),
+                "interceptions": _num("interceptions"),
+                "blocked_shots": _num("blockedShots"),
+                "crosses": _num("accurateCrosses"),
+                "long_balls": _num("accurateLongBalls"),
+            })
+        return stats

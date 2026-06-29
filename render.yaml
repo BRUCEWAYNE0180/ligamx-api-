@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ligamx-api
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port 10000"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ligamx-db
+          property: connectionString
+
+  - type: cron
+    name: ligamx-api-sync
+    runtime: python
+    schedule: "0 */6 * * *"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python sync.py"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ligamx-db
+          property: connectionString
+
+databases:
+  - name: ligamx-db
+    databaseName: ligamx
+    user: ligamx
+    plan: free
