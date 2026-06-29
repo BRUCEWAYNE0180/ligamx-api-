@@ -14,7 +14,7 @@ from app import models
 Base.metadata.create_all(bind=engine)
 db=SessionLocal()
 scraper=get_scraper("espn")
-for m in [models.Standing,models.Match,models.Player,models.Week,models.Team,models.Stadium,models.Season]:
+for m in [models.Standing,models.MatchStat,models.Match,models.PlayerStat,models.Player,models.Week,models.Team,models.Stadium,models.Season]:
     db.query(m).delete()
 db.commit()
 smap={}
