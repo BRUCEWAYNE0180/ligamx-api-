@@ -512,6 +512,8 @@ def _write_season_data(db, *, stadiums, teams, players, matches, standings, tour
                 away_score=m.get("away_score"),
                 status=m.get("status", "scheduled"),
                 week_number=m.get("week"),
+                stage_name=m.get("stage_name"),
+                round_name=m.get("round_name"),
                 external_event_id=str(eid) if eid is not None else None,
             )
             db.add(mo)

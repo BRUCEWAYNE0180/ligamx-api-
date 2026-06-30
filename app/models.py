@@ -58,6 +58,8 @@ class Match(Base):
     sofascore_event_id = Column(Integer, nullable=True, index=True)
     external_event_id = Column(String, nullable=True, index=True)  # id del partido en la fuente (ESPN/365)
     referee = Column(String, nullable=True)  # arbitro principal (via 365Scores; ESPN no lo expone)
+    stage_name = Column(String, nullable=True)  # fase: regular o nombre de la fase final (Liguilla)
+    round_name = Column(String, nullable=True)  # ronda: "Fecha N", "Cuartos de Final", "Semifinal", "Final"...
     
     season = relationship("Season", back_populates="matches")
     stadium = relationship("Stadium")

@@ -164,6 +164,7 @@ imprime temporada, equipos, jugadores y partidos cargados. Verifica con
 - `GET /standings/projection?season=` — **proyección de la tabla final** (puntos esperados de los partidos restantes vía Poisson) 🆕
 - `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)
 - `GET /liguilla/bracket?season=` — **cuadro oficial de Liguilla** (siembra Play-In + Cuartos 1v8/2v7/3v6/4v5, ida y vuelta) 🆕
+- `GET /liguilla/results?season=` — **resultados REALES de la Liguilla por serie**: agrupa los partidos de fase final jugados, calcula el marcador GLOBAL (ida y vuelta) y el ganador de cada llave (se llena al jugarse la Liguilla) 🆕
 - `GET /top-scorers?season=` — tabla de goleo
 
 > El parámetro `season` acepta la etiqueta del torneo (`Apertura 2026`) o el año

@@ -174,6 +174,101 @@ def get_liguilla(season: str = Query(None), db: Session = Depends(get_db)):
     }
 
 
+def _classify_phase(round_name, stage_name):
+    """Clasifica un partido en una fase de Liguilla a partir de su ronda/etapa.
+    Devuelve (clave, etiqueta, orden) o (None, None, None) si es temporada regular."""
+    text = f"{round_name or ''} {stage_name or ''}".lower()
+    if not text.strip():
+        return None, None, None
+    if "semi" in text:
+        return "semifinals", "Semifinales", 3
+    if "cuartos" in text or "quarter" in text:
+        return "quarterfinals", "Cuartos de final", 2
+    if "play" in text or "reclasif" in text or "repechaje" in text:
+        return "play_in", "Play-In", 1
+    if "final" in text:
+        return "final", "Final", 4
+    return None, None, None
+
+
+@router.get("/liguilla/results")
+def liguilla_results(season: str = Query(None), db: Session = Depends(get_db)):
+    """Resultados REALES de la Liguilla por serie (no la siembra teorica): agrupa
+    los partidos de fase final ya jugados en series (ida y vuelta), calcula el
+    marcador GLOBAL y el ganador de cada llave. Se llena conforme se juega la
+    Liguilla; si la temporada aun no llego a fase final, devuelve listas vacias."""
+    season_id = resolve_season_id(db, season)
+    label = resolve_season_label(db, season)
+    if season_id is None:
+        raise HTTPException(status_code=404, detail="No hay temporadas cargadas")
+
+    matches = (
+        db.query(models.Match)
+        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+        .filter(models.Match.season_id == season_id, models.Match.status == "finished")
+        .all()
+    )
+
+    series = {}
+    for m in matches:
+        phase, phase_label, order = _classify_phase(m.round_name, m.stage_name)
+        if not phase or m.home_team_id is None or m.away_team_id is None:
+            continue
+        key = (order, frozenset([m.home_team_id, m.away_team_id]))
+        s = series.setdefault(key, {
+            "phase": phase, "phase_label": phase_label, "order": order,
+            "aggregate": {}, "names": {}, "legs": [],
+        })
+        s["aggregate"][m.home_team_id] = s["aggregate"].get(m.home_team_id, 0) + (m.home_score or 0)
+        s["aggregate"][m.away_team_id] = s["aggregate"].get(m.away_team_id, 0) + (m.away_score or 0)
+        s["names"][m.home_team_id] = m.home_team.name if m.home_team else None
+        s["names"][m.away_team_id] = m.away_team.name if m.away_team else None
+        s["legs"].append({
+            "match_id": m.id, "date": m.match_date, "round_name": m.round_name,
+            "home_team_id": m.home_team_id, "home_team": m.home_team.name if m.home_team else None,
+            "away_team_id": m.away_team_id, "away_team": m.away_team.name if m.away_team else None,
+            "home_score": m.home_score, "away_score": m.away_score,
+        })
+
+    out = []
+    for (order, _teams), s in series.items():
+        tids = list(s["aggregate"].keys())
+        winner_id = None
+        decided = False
+        if len(tids) == 2:
+            a, b = tids
+            ga, gb = s["aggregate"][a], s["aggregate"][b]
+            if ga != gb:
+                winner_id = a if ga > gb else b
+                decided = True
+        out.append({
+            "phase": s["phase"],
+            "phase_label": s["phase_label"],
+            "order": s["order"],
+            "teams": [{"team_id": t, "team": s["names"].get(t), "aggregate": s["aggregate"][t]} for t in tids],
+            "legs": sorted(s["legs"], key=lambda x: (x["date"] is None, x["date"])),
+            "winner_team_id": winner_id,
+            "winner": s["names"].get(winner_id) if winner_id else None,
+            "decided": decided,
+            "note": None if decided else "Serie sin definir o empate global (se resuelve por posicion/penales)",
+        })
+    out.sort(key=lambda r: r["order"])
+
+    by_phase = {}
+    for r in out:
+        by_phase.setdefault(r["phase"], []).append(r)
+
+    return {
+        "season": label,
+        "has_playoff_data": len(out) > 0,
+        "series_count": len(out),
+        "phases": by_phase,
+        "note": ("Datos reales de la Liguilla." if out else
+                 "Aun no hay partidos de fase final cargados para esta temporada "
+                 "(la Liguilla se juega al cierre del torneo)."),
+    }
+
+
 @router.get("/liguilla/bracket")
 def get_liguilla_bracket(season: str = Query(None), db: Session = Depends(get_db)):
     """Cuadro (bracket) oficial de la Liguilla, sembrado por la posicion final

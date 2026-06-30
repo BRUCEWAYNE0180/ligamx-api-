@@ -1053,3 +1053,47 @@ def test_espn_scraper_nacionalidad_desde_citizenship():
     assert p["nationality"] == "México"
     assert p["flag_url"] == "http://flag/mex.png"
     assert p["height"] == "1.80 m" and p["weight"] == "76 kg"
+
+
+# ---------- Liguilla: resultados reales por serie ----------
+
+def test_classify_phase():
+    from app.routers.standings import _classify_phase
+    assert _classify_phase("Cuartos de Final", None)[0] == "quarterfinals"
+    assert _classify_phase("Semifinal", None)[0] == "semifinals"
+    assert _classify_phase("Final", None)[0] == "final"
+    assert _classify_phase("Reclasificación", None)[0] == "play_in"
+    # temporada regular -> no es fase final
+    assert _classify_phase("Fecha 5", None)[0] is None
+    assert _classify_phase(None, None)[0] is None
+    # 'Semifinal' contiene 'final' pero NO debe clasificarse como Final
+    assert _classify_phase("Semifinal", None)[0] == "semifinals"
+
+
+def test_liguilla_results_sin_fase_final(client, seeded):
+    # el fixture solo tiene un partido de temporada regular -> sin datos de Liguilla
+    r = client.get("/liguilla/results").json()
+    assert r["season"] == "Apertura 2026"
+    assert r["has_playoff_data"] is False
+    assert r["series_count"] == 0
+
+
+def test_liguilla_results_serie_real(client, seeded, db):
+    from datetime import datetime
+    from app import models
+    # Cuartos de final, ida y vuelta entre equipo 1 y 2
+    db.add(models.Match(id=50, season_id=1, home_team_id=1, away_team_id=2,
+                        home_score=3, away_score=1, status="finished",
+                        round_name="Cuartos de Final", match_date=datetime(2026, 11, 20)))
+    db.add(models.Match(id=51, season_id=1, home_team_id=2, away_team_id=1,
+                        home_score=1, away_score=1, status="finished",
+                        round_name="Cuartos de Final", match_date=datetime(2026, 11, 23)))
+    db.commit()
+    r = client.get("/liguilla/results").json()
+    assert r["has_playoff_data"] is True
+    assert r["series_count"] == 1
+    serie = r["phases"]["quarterfinals"][0]
+    agg = {t["team_id"]: t["aggregate"] for t in serie["teams"]}
+    assert agg[1] == 4 and agg[2] == 2   # 3+1 vs 1+1
+    assert serie["winner_team_id"] == 1 and serie["decided"] is True
+    assert len(serie["legs"]) == 2
