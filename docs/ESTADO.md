@@ -55,6 +55,9 @@ detectado en los datos no coincide con el esperado.
       se acumulan torneos. `GET /seasons` lista los disponibles y casi todos los
       endpoints aceptan `?season=` (etiqueta o año). Clave de temporada =
       etiqueta completa ("Apertura 2026") para no mezclar los dos torneos del año.
+- [x] **Backfill de temporadas pasadas**: `POST /sync/backfill?year=&tournament=`
+      carga un torneo pasado (ESPN da los partidos por rango de fechas) y
+      reconstruye su tabla desde los resultados. No destructivo.
 - [ ] Histórico multi-temporada consultable por endpoint.
 - [x] Persistir las stats por jugador del partido en BD (`player_match_stats`),
       con agregados de temporada (`/players/{id}/season-stats`), historial

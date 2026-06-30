@@ -74,6 +74,57 @@ def calculate_week_numbers(matches: List[Dict[str, Any]]):
         ws = week_start(m["match_date"])
         m["week"] = week_number_by_start[ws]
 
+
+def compute_standings_from_matches(matches):
+    """Calcula la tabla general a partir de los partidos JUGADOS (3 pts victoria,
+    1 empate). Util para el backfill de temporadas pasadas: en vez de depender de
+    la tabla 'por ano' de ESPN (que mezcla los dos torneos), reconstruimos la
+    clasificacion real del torneo desde sus propios resultados.
+    Orden: puntos, luego diferencia de goles, luego goles a favor."""
+    agg = {}
+
+    def row(name):
+        return agg.setdefault(name, {
+            "team_name": name, "played": 0, "won": 0, "drawn": 0, "lost": 0,
+            "goals_for": 0, "goals_against": 0, "points": 0,
+        })
+
+    for m in matches:
+        if m.get("status") != "finished":
+            continue
+        hs, as_ = m.get("home_score"), m.get("away_score")
+        h, a = m.get("home_team"), m.get("away_team")
+        if hs is None or as_ is None or not h or not a:
+            continue
+        rh, ra = row(h), row(a)
+        rh["played"] += 1
+        ra["played"] += 1
+        rh["goals_for"] += hs
+        rh["goals_against"] += as_
+        ra["goals_for"] += as_
+        ra["goals_against"] += hs
+        if hs > as_:
+            rh["won"] += 1
+            ra["lost"] += 1
+            rh["points"] += 3
+        elif as_ > hs:
+            ra["won"] += 1
+            rh["lost"] += 1
+            ra["points"] += 3
+        else:
+            rh["drawn"] += 1
+            ra["drawn"] += 1
+            rh["points"] += 1
+            ra["points"] += 1
+
+    rows = list(agg.values())
+    for r in rows:
+        r["goal_difference"] = r["goals_for"] - r["goals_against"]
+    rows.sort(key=lambda r: (r["points"], r["goal_difference"], r["goals_for"]), reverse=True)
+    for i, r in enumerate(rows):
+        r["position"] = i + 1
+    return rows
+
 def _teams_match(name1: str, name2: str) -> bool:
     """Compara nombres de equipos de ESPN y SofaScore."""
     if not name1 or not name2:
@@ -620,6 +671,96 @@ def run_sync_with_log(db, source: str = "espn"):
             source=source, status="success", detail="ok",
             season=result.get("season"),
             teams=result.get("teams"), players=result.get("players"),
+            matches=result.get("matches"),
+            started_at=started,
+            duration_seconds=(datetime.utcnow() - started).total_seconds(),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    return result
+
+
+
+def run_backfill(db, year: int, tournament: str, source: str = "espn"):
+    """Carga (backfill) una temporada PASADA concreta sin tocar las demas.
+
+    A diferencia de run_sync (que detecta el torneo vigente y enriquece con datos
+    en vivo), aqui el operador indica explicitamente el torneo+ano. Reusa el WRITE
+    no destructivo (_write_season_data), por lo que acumula la temporada en el
+    historico. La tabla se RECONSTRUYE desde los resultados (no se pide a ESPN).
+
+    No enriquece con 365Scores/noticias (esos datos solo existen para lo reciente).
+    """
+    if tournament not in ("Apertura", "Clausura"):
+        raise ValueError("tournament debe ser 'Apertura' o 'Clausura'")
+    logger.info(f"Backfill de {tournament} {year} desde {source}")
+    scraper = get_scraper(source)
+
+    try:
+        raw_stadiums = scraper.get_stadiums()
+        raw_teams = scraper.get_teams()
+        raw_players = scraper.get_players()
+        raw_matches = scraper.get_matches(season_id=year, tournament=tournament)
+    except Exception as e:
+        logger.error(f"Backfill abortado: fallo al obtener datos: {e}")
+        raise
+
+    if not raw_matches:
+        raise ValueError(f"Sin partidos para {tournament} {year}; no se backfillea nada")
+
+    calculate_week_numbers(raw_matches)
+    standings = compute_standings_from_matches(raw_matches)
+
+    try:
+        sn, tmap, team_stadium, match_objs, season_label = _write_season_data(
+            db,
+            stadiums=raw_stadiums,
+            teams=raw_teams,
+            players=raw_players,
+            matches=raw_matches,
+            standings=standings,
+            tournament=tournament,
+            year=year,
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Backfill fallo durante la escritura, rollback aplicado: {e}")
+        raise
+
+    finished = sum(1 for m in raw_matches if m.get("status") == "finished")
+    logger.info(f"Backfill {season_label} OK: {len(raw_matches)} partidos, tabla de {len(standings)} equipos")
+    return {
+        "season": season_label,
+        "teams": len(raw_teams),
+        "matches": db.query(models.Match).filter(models.Match.season_id == sn.id).count(),
+        "finished_matches": finished,
+        "standings_rows": len(standings),
+    }
+
+
+def run_backfill_with_log(db, year: int, tournament: str, source: str = "espn"):
+    """Ejecuta run_backfill y registra el resultado en sync_logs."""
+    started = datetime.utcnow()
+    try:
+        result = run_backfill(db, year, tournament, source)
+    except Exception as e:
+        try:
+            db.rollback()
+            db.add(models.SyncLog(
+                source=f"backfill:{tournament} {year}", status="error", detail=str(e)[:500],
+                started_at=started,
+                duration_seconds=(datetime.utcnow() - started).total_seconds(),
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise
+    try:
+        db.add(models.SyncLog(
+            source=f"backfill:{source}", status="success", detail="ok",
+            season=result.get("season"), teams=result.get("teams"),
             matches=result.get("matches"),
             started_at=started,
             duration_seconds=(datetime.utcnow() - started).total_seconds(),

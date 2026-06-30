@@ -267,3 +267,59 @@ def test_seasons_y_standings_por_temporada(client, seeded, db):
     assert len(client.get("/standings").json()) == 2
     # Filtrada a Clausura 2026 -> 1 fila
     assert len(client.get("/standings", params={"season": "Clausura 2026"}).json()) == 1
+
+
+
+# ---------- Backfill de temporadas pasadas ----------
+
+def test_compute_standings_from_matches():
+    from app.services.sync_service import compute_standings_from_matches
+    ms = [
+        {"status": "finished", "home_team": "A", "away_team": "B", "home_score": 2, "away_score": 0},
+        {"status": "finished", "home_team": "B", "away_team": "A", "home_score": 1, "away_score": 1},
+        {"status": "scheduled", "home_team": "A", "away_team": "B", "home_score": None, "away_score": None},
+    ]
+    table = {r["team_name"]: r for r in compute_standings_from_matches(ms)}
+    assert table["A"]["points"] == 4 and table["A"]["played"] == 2 and table["A"]["position"] == 1
+    assert table["A"]["goal_difference"] == 2
+    assert table["B"]["points"] == 1 and table["B"]["position"] == 2
+
+
+def test_run_backfill_crea_temporada_pasada(db, monkeypatch):
+    from datetime import datetime
+    from app import models
+    from app.services import sync_service
+
+    class _Fake:
+        def get_stadiums(self):
+            return [{"name": "Azteca", "city": "CDMX"}]
+        def get_teams(self):
+            return [{"id": 1, "name": "América"}, {"id": 2, "name": "Chivas"}]
+        def get_players(self):
+            return [{"id": 10, "name": "Henry Martín", "team_name": "América"}]
+        def get_matches(self, season_id=None, tournament=None):
+            return [
+                {"event_id": "E1", "home_team": "América", "away_team": "Chivas", "home_team_id": 1,
+                 "away_team_id": 2, "home_score": 3, "away_score": 1, "status": "finished",
+                 "match_date": datetime(2025, 8, 1)},
+                {"event_id": "E2", "home_team": "Chivas", "away_team": "América", "home_team_id": 2,
+                 "away_team_id": 1, "home_score": 0, "away_score": 0, "status": "finished",
+                 "match_date": datetime(2025, 8, 8)},
+            ]
+
+    monkeypatch.setattr(sync_service, "get_scraper", lambda source: _Fake())
+    res = sync_service.run_backfill(db, 2025, "Apertura", "espn")
+    assert res["season"] == "Apertura 2025"
+    assert res["finished_matches"] == 2
+    assert db.query(models.Season).filter_by(name="Apertura 2025").count() == 1
+    st = (db.query(models.Standing).join(models.Season)
+          .filter(models.Season.name == "Apertura 2025")
+          .order_by(models.Standing.position).all())
+    assert st[0].team.name == "América" and st[0].points == 4  # victoria + empate
+    assert st[1].team.name == "Chivas" and st[1].points == 1
+
+
+def test_backfill_valida_torneo(client):
+    r = client.post("/sync/backfill", params={"year": 2025, "tournament": "Liguilla"},
+                    headers={"X-API-Key": "test-key"})
+    assert r.status_code == 422
