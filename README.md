@@ -105,6 +105,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/{id}/lineups` — alineaciones (ESPN)
 - `GET /matches/{id}/events` — eventos clave (goles/tarjetas/cambios)
 - `GET /matches/{id}/cards` — solo tarjetas
+- `GET /matches/{id}/player-stats` — **stats completas por jugador del partido, guardadas en BD** (minutos, goles, xG, xA, pases, regates, rating...) 🆕
 - `GET /matches/live` — partidos en vivo (hoy)
 - `GET /matches/today?date=YYYY-MM-DD` — partidos de un día
 - `GET /h2h/{team1}/{team2}` — historial entre dos equipos
@@ -123,6 +124,9 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /players/top?season=` — mejores por goles
 - `GET /players/{id}` — detalle
 - `GET /players/{id}/stats?season=` — estadísticas del jugador
+- `GET /players/{id}/match-stats?season=` — **historial partido a partido** con stats completas 🆕
+- `GET /players/{id}/season-stats?season=` — **resumen agregado de la temporada** (minutos, goles, asistencias, xG, xA, rating promedio) 🆕
+- `GET /players/season-leaders?stat=&season=&min_appearances=` — **tabla de líderes desde la BD** (goals, assists, minutes, xg, xa, rating...) 🆕
 - `GET /player-stats?season=` — estadísticas agregadas
 
 ### Datos en vivo (365Scores)

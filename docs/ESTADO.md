@@ -51,7 +51,9 @@ detectado en los datos no coincide con el esperado.
 - [ ] Lesionados/suspendidos y disponibilidad por jornada.
 - [ ] Liguilla/Play-In real (bracket ida/vuelta), no solo la foto de la tabla.
 - [ ] Histórico multi-temporada consultable por endpoint.
-- [ ] Persistir las stats por jugador del partido en BD (hoy son live/cacheadas).
+- [x] Persistir las stats por jugador del partido en BD (`player_match_stats`),
+      con agregados de temporada (`/players/{id}/season-stats`), historial
+      (`/players/{id}/match-stats`) y tabla de líderes (`/players/season-leaders`).
 
 ### Plataforma
 - [ ] Redis para caché compartido entre workers + rate limiting.
@@ -59,6 +61,10 @@ detectado en los datos no coincide con el esperado.
 - [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
 
 ## Hecho recientemente
+- Stats por jugador **persistidas en BD** (`player_match_stats`): historial
+  partido a partido, agregados de temporada y tabla de líderes, todo cruzando con
+  365Scores en una sola pasada del sync (un request por partido, que también trae
+  el árbitro).
 - Estadísticas por jugador completas vía 365Scores: líderes de temporada en 16
   categorías (`/365scores/leaders`), líderes por equipo (`/365scores/team-leaders`)
   y stats completas por jugador del partido (`/365scores/matches/{id}/player-stats`:

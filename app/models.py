@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, func
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, JSON, func
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -175,6 +175,41 @@ class PlayerStat(Base):
     red_cards = Column(Integer, default=0)
     matches_played = Column(Integer, default=0)
     player = relationship("Player", backref="stats")
+    team = relationship("Team")
+
+
+class PlayerMatchStat(Base):
+    """Estadisticas COMPLETAS de un jugador en un partido concreto (via 365Scores).
+
+    Es la version granular y persistida de /365scores/matches/{id}/player-stats:
+    una fila por jugador por partido. Permite histórico y agregados de temporada
+    por SQL. Los campos numericos clave estan promovidos a columnas (para ordenar
+    y sumar) y el resto de metricas se guardan completas en `stats` (JSON).
+    """
+    __tablename__ = "player_match_stats"
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=True, index=True)
+    player_id = Column(Integer, nullable=True, index=True)  # id de la fuente (365Scores), sin FK: no coincide con players.id (ESPN)
+    player_name = Column(String, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    team_name = Column(String, nullable=True)
+    season = Column(String, nullable=True, index=True)
+    starter = Column(Integer, default=0)
+    minutes = Column(Integer, nullable=True)
+    goals = Column(Integer, default=0)
+    assists = Column(Integer, default=0)
+    shots = Column(Integer, nullable=True)
+    xg = Column(Float, nullable=True)
+    xa = Column(Float, nullable=True)
+    key_passes = Column(Integer, nullable=True)
+    touches = Column(Integer, nullable=True)
+    passes_completed = Column(Integer, nullable=True)
+    passes_attempted = Column(Integer, nullable=True)
+    interceptions = Column(Integer, nullable=True)
+    rating = Column(Float, nullable=True)
+    stats = Column(JSON, nullable=True)  # dict completo {nombre_metrica: valor}
+
+    match = relationship("Match")
     team = relationship("Team")
 
 
