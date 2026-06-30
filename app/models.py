@@ -77,6 +77,9 @@ class Player(Base):
     nationality = Column(String, nullable=True)
     birth_date = Column(String, nullable=True)
     photo_url = Column(String, nullable=True)
+    # id del jugador en 365Scores (fuente de player_match_stats). Permite cruzar
+    # stats por id EXACTO en vez de por nombre. Se rellena en el sync (best-effort).
+    external_365_id = Column(Integer, nullable=True, index=True)
     
     team = relationship("Team", back_populates="players")
 

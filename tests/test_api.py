@@ -910,3 +910,83 @@ def test_leaderboard_metrica_invalida_usa_goals(client, seeded, db):
     _seed_player_match_stats(db)
     r = client.get("/players/leaderboard", params={"metric": "inventada"}).json()
     assert r["metric"] == "goals"  # cae a goals por defecto
+
+
+
+# ---------- Cruce de identidad ESPN <-> 365Scores ----------
+
+def test_name_match_score():
+    from app.services.player_identity import name_match_score
+    # igualdad exacta (ignora acentos)
+    assert name_match_score("Henry Martín", "Henry Martín") == 1.0
+    assert name_match_score("Julian Quinones", "Julián Quiñones") == 1.0
+    # nombre corto con inicial + apellido -> match fuerte
+    assert name_match_score("J. Quiñones", "Julián Quiñones") >= 0.9
+    # apodo sin tokens comunes -> sin relación
+    assert name_match_score("Chaco", "Diego Valdés") == 0.0
+    # solo apellido -> señal media (no decisiva por sí sola)
+    assert 0.5 <= name_match_score("García", "Luis García") < 0.95
+
+
+def test_build_identity_map(db):
+    from app import models
+    from app.services.player_identity import build_player_identity_map
+    db.add(models.Team(id=1, name="América"))
+    db.add(models.Player(id=10, team_id=1, name="Henry Martín"))
+    db.add(models.Player(id=11, team_id=1, name="Julián Quiñones"))
+    db.flush()
+    # stats de 365Scores: ids propios y nombres distintos (uno abreviado)
+    db.add(models.PlayerMatchStat(match_id=1, player_id=5001, player_name="Henry Martín",
+                                  team_id=1, season="Apertura 2026", goals=1))
+    db.add(models.PlayerMatchStat(match_id=1, player_id=5002, player_name="J. Quiñones",
+                                  team_id=1, season="Apertura 2026", goals=2))
+    db.commit()
+    res = build_player_identity_map(db, "Apertura 2026")
+    assert res["mapped"] == 2 and res["unmatched"] == 0
+    assert db.get(models.Player, 10).external_365_id == 5001
+    assert db.get(models.Player, 11).external_365_id == 5002
+
+
+def test_identity_map_homonimos(db):
+    # Dos apellidos iguales en el MISMO equipo: se desambiguan por el nombre/inicial
+    from app import models
+    from app.services.player_identity import build_player_identity_map
+    db.add(models.Team(id=1, name="América"))
+    db.add(models.Player(id=20, team_id=1, name="Luis García"))
+    db.add(models.Player(id=21, team_id=1, name="Carlos García"))
+    db.flush()
+    db.add(models.PlayerMatchStat(match_id=1, player_id=6001, player_name="L. García", team_id=1, season="S"))
+    db.add(models.PlayerMatchStat(match_id=1, player_id=6002, player_name="C. García", team_id=1, season="S"))
+    db.commit()
+    build_player_identity_map(db, "S")
+    assert db.get(models.Player, 20).external_365_id == 6001
+    assert db.get(models.Player, 21).external_365_id == 6002
+
+
+def test_identity_map_endpoint(client, seeded, db):
+    from app import models
+    p = db.get(models.Player, 10)
+    p.external_365_id = 999
+    db.commit()
+    r = client.get("/players/identity-map").json()
+    assert r["players_total"] >= 1 and r["players_mapped"] >= 1
+    assert any(s["external_365_id"] == 999 for s in r["sample"])
+
+
+def test_stats_por_id_exacto(client, seeded, db):
+    # Jugador 10 mapeado a id 365 = 7777; la fila de stats usa ESE id pero un
+    # nombre DISTINTO que NO casaría por nombre -> debe encontrarse por id exacto.
+    from app import models
+    p = db.get(models.Player, 10)
+    p.external_365_id = 7777
+    db.add(models.PlayerMatchStat(match_id=1, player_id=7777, player_name="H. Martín (365)",
+                                  team_id=1, team_name="América", season="Apertura 2026",
+                                  minutes=90, goals=3, assists=1, rating=9.0))
+    db.commit()
+    r = client.get("/players/10/season-stats").json()
+    assert r["goals"] == 3 and r["assists"] == 1
+
+
+def test_sync_player_identity_requiere_api_key(client):
+    assert client.post("/sync/player-identity").status_code == 422
+    assert client.post("/sync/player-identity", headers={"X-API-Key": "wrong"}).status_code == 403

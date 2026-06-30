@@ -157,6 +157,7 @@ alembic revision --autogenerate -m "describe el cambio"
 ### Perfiles 🆕
 - `GET /players/{id}/profile?season=` — **perfil completo del jugador** (ficha + agregado de temporada + últimos 5 partidos)
 - `GET /teams/{id}/profile?season=` — **perfil completo del equipo** (ficha+sede, posición, forma, xG, plantilla, próximo partido y último resultado)
+- `GET /players/identity-map` — **diagnóstico del cruce de identidad** ESPN↔365Scores: cuántos jugadores tienen mapeado su id de 365Scores y la cobertura del cruce 🆕
 
 ### Tiempo real (SSE)
 - `GET /live/stream?interval=&max_seconds=` — **marcadores en vivo por streaming** (Server-Sent Events). El servidor empuja un evento `live` con los partidos en curso cuando cambian. Ej: `new EventSource("/live/stream")` 🆕
@@ -206,6 +207,7 @@ alembic revision --autogenerate -m "describe el cambio"
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
 - `POST /sync/backfill?year=2025&tournament=Apertura` — **carga una temporada pasada al histórico** sin borrar las demás; la tabla se reconstruye desde los resultados (requiere `X-API-Key`) 🆕
+- `POST /sync/player-identity?season=` — **reconstruye el mapa de identidad** ESPN↔365Scores (rellena `external_365_id` para emparejar stats por id exacto en vez de por nombre); se ejecuta solo en cada `POST /sync` (requiere `X-API-Key`) 🆕
 - `GET /sync/status` — **estado y frescura de los datos** (último sync, si fue exitoso, antigüedad) 🆕
 
 ---

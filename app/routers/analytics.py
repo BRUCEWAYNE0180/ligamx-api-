@@ -27,8 +27,13 @@ def _norm(s: str) -> str:
 # ---------- Comparador de jugadores ----------
 def _player_season_agg(db: Session, player, label: str) -> dict:
     M = models.PlayerMatchStat
-    nq = _norm(player.name)
-    rows = [r for r in db.query(M).filter(M.season == label).all() if _norm(r.player_name or "") == nq]
+    rows = []
+    # Preferimos cruce por id exacto (mapa de identidad); si no, por nombre.
+    if getattr(player, "external_365_id", None) is not None:
+        rows = db.query(M).filter(M.season == label, M.player_id == player.external_365_id).all()
+    if not rows:
+        nq = _norm(player.name)
+        rows = [r for r in db.query(M).filter(M.season == label).all() if _norm(r.player_name or "") == nq]
     ratings = [r.rating for r in rows if r.rating is not None]
 
     def s(attr):
