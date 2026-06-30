@@ -610,6 +610,16 @@ def run_sync(db, source: str = "espn"):
     # Detalle 365Scores: arbitros + stats completas por jugador (un request/partido)
     _sync_365_match_details(db, season_label, sn.id)
 
+    # Cruce de identidad ESPN<->365Scores: rellena players.external_365_id para
+    # poder emparejar stats por id exacto (no por nombre). Best-effort.
+    try:
+        from app.services.player_identity import build_player_identity_map
+        res = build_player_identity_map(db, season_label)
+        logger.info(f"Identidad de jugadores: {res['mapped']}/{res['sources_365']} mapeados")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Cruce de identidad de jugadores fallo (no critico): {e}")
+
     # Detalle por partido: eventos (goles/tarjetas/cambios) y alineaciones.
     # Se enlaza por el id externo del partido (solo partidos jugados).
     try:

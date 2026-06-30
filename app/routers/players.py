@@ -204,6 +204,36 @@ def players_leaderboard(
     return {"season": label, "metric": metric, "order": order, "count": len(out), "players": out}
 
 
+@router.get("/players/identity-map")
+def players_identity_map(db: Session = Depends(get_db)):
+    """Diagnostico del cruce de identidad ESPN<->365Scores: cuantos jugadores
+    tienen mapeado su id de 365Scores (external_365_id) y cuantas filas de stats
+    quedan sin asociar a una ficha. Util para verificar la calidad del cruce."""
+    total = db.query(models.Player).count()
+    mapped = db.query(models.Player).filter(models.Player.external_365_id.isnot(None)).count()
+    # ids de 365 que aparecen en stats pero no estan mapeados a ningun jugador
+    mapped_ids = {pid for (pid,) in db.query(models.Player.external_365_id)
+                  .filter(models.Player.external_365_id.isnot(None)).all()}
+    src_ids = {pid for (pid,) in db.query(models.PlayerMatchStat.player_id).distinct().all()
+               if pid is not None}
+    unmapped_sources = sorted(src_ids - mapped_ids)
+    sample = (db.query(models.Player)
+              .filter(models.Player.external_365_id.isnot(None))
+              .limit(20).all())
+    return {
+        "players_total": total,
+        "players_mapped": mapped,
+        "players_unmapped": total - mapped,
+        "coverage_pct": round(mapped / total * 100, 1) if total else 0.0,
+        "stats_source_ids": len(src_ids),
+        "stats_source_ids_unmapped": len(unmapped_sources),
+        "sample": [
+            {"player_id": p.id, "name": p.name, "team_id": p.team_id,
+             "external_365_id": p.external_365_id} for p in sample
+        ],
+    }
+
+
 @router.get("/players/search", response_model=list[schemas.PlayerResponse])
 def search_players(
     q: str = Query(None, description="Texto a buscar en el nombre (ignora acentos)"),
@@ -251,13 +281,26 @@ def get_player_stat(player_id: int, db: Session = Depends(get_db), season: str =
     return stat
 
 
-def _player_match_rows(db, player_name: str, season: str = None):
-    """Filas de player_match_stats del jugador, emparejadas por nombre normalizado
-    (las stats vienen de 365Scores, cuyos ids de jugador no coinciden con ESPN)."""
-    nq = _norm(player_name)
+def _player_match_rows(db, player, season: str = None):
+    """Filas de player_match_stats de un jugador en una temporada.
+
+    Estrategia robusta: si el jugador tiene `external_365_id` (mapa de identidad),
+    se emparejan por id EXACTO. Si no hay mapeo o no devuelve filas, se cae al
+    emparejado por nombre normalizado (retrocompatibilidad). Acepta tambien un
+    string (nombre) para usos que solo tengan el nombre."""
     q = db.query(models.PlayerMatchStat)
     if season:
         q = q.filter(models.PlayerMatchStat.season == season)
+
+    # Permite pasar el objeto Player (preferido) o solo el nombre.
+    ext_id = getattr(player, "external_365_id", None)
+    name = getattr(player, "name", player)
+
+    if ext_id is not None:
+        rows = q.filter(models.PlayerMatchStat.player_id == ext_id).all()
+        if rows:
+            return rows
+    nq = _norm(name)
     return [r for r in q.all() if _norm(r.player_name or "") == nq]
 
 
@@ -265,7 +308,7 @@ def _player_match_rows(db, player_name: str, season: str = None):
 def get_player_match_stats(player_id: int, season: str = Query(None), db: Session = Depends(get_db)):
     """Historial partido a partido del jugador con sus estadisticas completas."""
     player = get_or_404(db, models.Player, player_id)
-    rows = _player_match_rows(db, player.name, season)
+    rows = _player_match_rows(db, player, season)
     return sorted(rows, key=lambda r: (r.match_id is None, r.match_id))
 
 
@@ -275,7 +318,7 @@ def get_player_season_stats(player_id: int, season: str = Query(None), db: Sessi
     minutos, goles, asistencias, remates, xG, xA y rating promedio."""
     player = get_or_404(db, models.Player, player_id)
     label = resolve_season_label(db, season)
-    rows = _player_match_rows(db, player.name, label)
+    rows = _player_match_rows(db, player, label)
     if not rows:
         raise HTTPException(status_code=404, detail="Sin estadisticas por partido para esta temporada")
 
@@ -343,7 +386,7 @@ def get_player_form(player_id: int, last: int = Query(5, ge=1, le=20),
     rating promedio reciente, totales y racha de goleo (partidos seguidos marcando)."""
     player = get_or_404(db, models.Player, player_id)
     label = resolve_season_label(db, season)
-    rows = _player_match_rows(db, player.name, label)
+    rows = _player_match_rows(db, player, label)
     recent = sorted(rows, key=lambda r: (r.match_id is None, r.match_id), reverse=True)[:last]
     ratings = [r.rating for r in recent if r.rating is not None]
     scoring_streak = 0
@@ -374,7 +417,7 @@ def get_player_profile(player_id: int, season: str = Query(None), db: Session = 
     y sus ultimos 5 partidos."""
     player = get_or_404(db, models.Player, player_id)
     label = resolve_season_label(db, season)
-    rows = _player_match_rows(db, player.name, label)
+    rows = _player_match_rows(db, player, label)
 
     def _sum(attr):
         return sum(getattr(r, attr) or 0 for r in rows)

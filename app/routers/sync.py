@@ -38,6 +38,21 @@ def backfill_season(
     return {"message": "Temporada cargada al historico", "result": result}
 
 
+@router.post("/sync/player-identity")
+@limiter.limit(SYNC_LIMIT)
+def sync_player_identity(
+    request: Request,
+    season: str = Query(None, description="Etiqueta de temporada; por defecto todas"),
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """Reconstruye el mapa de identidad ESPN<->365Scores (rellena
+    players.external_365_id) emparejando por nombre+equipo. Idempotente."""
+    from app.services.player_identity import build_player_identity_map
+    result = build_player_identity_map(db, season)
+    return {"message": "Mapa de identidad reconstruido", "result": result}
+
+
 @router.get("/sync/status")
 def sync_status(db: Session = Depends(get_db)):
     """Estado y frescura de los datos: ultimo sync, si fue exitoso y hace
