@@ -323,3 +323,32 @@ def test_backfill_valida_torneo(client):
     r = client.post("/sync/backfill", params={"year": 2025, "tournament": "Liguilla"},
                     headers={"X-API-Key": "test-key"})
     assert r.status_code == 422
+
+
+
+# ---------- Liguilla: bracket oficial ----------
+
+def test_liguilla_bracket(client, db):
+    from app import models
+    db.add(models.Season(id=1, name="Apertura 2026", year=2026, tournament_type="Apertura"))
+    db.flush()
+    for pos in range(1, 11):
+        db.add(models.Team(id=pos, name=f"Equipo {pos}"))
+        db.add(models.Standing(season_id=1, team_id=pos, position=pos, played=17, won=10, drawn=0,
+                               lost=7, goals_for=20, goals_against=10, goal_difference=10,
+                               points=40 - pos))
+    db.commit()
+
+    b = client.get("/liguilla/bracket").json()
+    assert b["season"] == "Apertura 2026"
+    assert len(b["qualified_direct"]) == 6
+    assert len(b["play_in_teams"]) == 4
+    # Play-In: 7º vs 8º y 9º vs 10º
+    assert b["play_in"]["game_1"]["home"]["position"] == 7
+    assert b["play_in"]["game_1"]["away"]["position"] == 8
+    assert b["play_in"]["game_2"]["home"]["position"] == 9
+    # Cuartos sembrados correctamente
+    qf = {q["series"]: q for q in b["quarterfinals"]}
+    assert qf["C1"]["high_seed"]["position"] == 1
+    assert qf["C3"]["high_seed"]["position"] == 3 and qf["C3"]["low_seed"]["position"] == 6
+    assert qf["C4"]["high_seed"]["position"] == 4 and qf["C4"]["low_seed"]["position"] == 5

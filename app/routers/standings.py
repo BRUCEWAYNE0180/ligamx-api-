@@ -83,3 +83,63 @@ def get_liguilla(season: str = Query(None), db: Session = Depends(get_db)):
         "play_in": play_in,
         "eliminados": eliminated,
     }
+
+
+@router.get("/liguilla/bracket")
+def get_liguilla_bracket(season: str = Query(None), db: Session = Depends(get_db)):
+    """Cuadro (bracket) oficial de la Liguilla, sembrado por la posicion final
+    de la tabla:
+      - Play-In (7º-10º): tres juegos que definen los puestos 7 y 8.
+      - Cuartos de final: 1º vs 8º, 2º vs 7º, 3º vs 6º, 4º vs 5º (ida y vuelta).
+    Semifinales y final se resiembran por posicion entre los ganadores.
+    """
+    season_id = resolve_season_id(db, season)
+    label = resolve_season_label(db, season)
+    q = db.query(models.Standing).options(joinedload(models.Standing.team))
+    if season_id is not None:
+        q = q.filter(models.Standing.season_id == season_id)
+    rows = q.order_by(models.Standing.position).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No hay tabla de posiciones todavia")
+
+    def seed(s):
+        return {
+            "position": s.position,
+            "team_id": s.team_id,
+            "team": s.team.name if s.team else None,
+            "logo_url": s.team.logo_url if s.team else None,
+            "points": s.points,
+            "goal_difference": s.goal_difference,
+        }
+
+    by_pos = {s.position: seed(s) for s in rows}
+
+    def at(p):
+        return by_pos.get(p)
+
+    play_in = {
+        "game_1": {"label": "7º vs 8º", "home": at(7), "away": at(8),
+                   "reward": "El ganador clasifica como 7º de la Liguilla"},
+        "game_2": {"label": "9º vs 10º", "home": at(9), "away": at(10),
+                   "reward": "El perdedor queda eliminado"},
+        "game_3": {"label": "Perdedor del Juego 1 vs Ganador del Juego 2",
+                   "reward": "El ganador clasifica como 8º de la Liguilla"},
+    }
+    quarterfinals = [
+        {"series": "C1", "matchup": "1º vs 8º", "high_seed": at(1), "low_seed": "8º (vía Play-In)"},
+        {"series": "C2", "matchup": "2º vs 7º", "high_seed": at(2), "low_seed": "7º (vía Play-In)"},
+        {"series": "C3", "matchup": "3º vs 6º", "high_seed": at(3), "low_seed": at(6)},
+        {"series": "C4", "matchup": "4º vs 5º", "high_seed": at(4), "low_seed": at(5)},
+    ]
+    return {
+        "season": label,
+        "format": "Liga MX: Play-In (7º-10º) + Liguilla a ida y vuelta (cuartos, semifinales y final)",
+        "legs": "ida y vuelta",
+        "qualified_direct": [at(p) for p in range(1, 7) if at(p)],
+        "play_in_teams": [at(p) for p in range(7, 11) if at(p)],
+        "play_in": play_in,
+        "quarterfinals": quarterfinals,
+        "semifinals": {"note": "Se resiembra por posición de tabla entre los 4 ganadores de cuartos (mejor vs peor). Ida y vuelta."},
+        "final": {"note": "Ida y vuelta; el mejor sembrado cierra la serie como local."},
+        "tiebreaker": "Si la serie termina empatada en el global, avanza el equipo mejor ubicado en la tabla (salvo la final, que se define en cancha).",
+    }
