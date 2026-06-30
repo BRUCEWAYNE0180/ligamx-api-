@@ -103,6 +103,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /teams/{id}/season-stats?season=` — **~100 estadísticas del equipo en la temporada vía ESPN** (porterías a cero, goles recibidos, pases completados, tackles, intercepciones, duelos...) 🆕
 
 ### Partidos
+- `GET /calendar?season=` — **calendario completo por jornada** con rival, fecha, sede oficial, marcador y estado 🆕
 - `GET /matches` — filtros: `team_id`, `week`, `status`, `limit`, `offset`
 - `GET /matches/upcoming` — próximos partidos
 - `GET /matches/team/{team_id}` — por equipo
@@ -150,6 +151,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /players/{id}/match-stats?season=` — **historial partido a partido** con stats completas 🆕
 - `GET /players/{id}/season-stats?season=` — **resumen agregado de la temporada** (minutos, goles, asistencias, xG, xA, rating promedio) 🆕
 - `GET /players/season-leaders?stat=&season=&min_appearances=` — **tabla de líderes desde la BD** (goals, assists, minutes, xg, xa, rating...) 🆕
+- `GET /players/xg-performance?season=&order=over|under` — **goles vs xG**: quién finaliza por encima/debajo de lo esperado 🆕
 - `GET /player-stats?season=` — estadísticas agregadas
 
 ### Datos en vivo (365Scores)
@@ -163,6 +165,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /365scores/matches/{game_id}/player-stats` — **estadísticas COMPLETAS por jugador** (minutos, goles, xG, xA, remates, pases, regates, duelos, intercepciones, rating...) para todos los jugadores 🆕
 - `GET /365scores/matches/{game_id}/shots` — **mapa de tiros con xG** (cada disparo: xG, xGoT, parte del cuerpo, resultado, coordenadas) + totales de xG por equipo 🆕
 - `GET /365scores/matches/{game_id}/top-performers` — **mejores jugadores del partido** por posición (local/visitante) 🆕
+- `GET /365scores/news` — **noticias de Liga MX** (feed propio de 365Scores: título, imagen, url, fecha) 🆕
 - `GET /365scores/leaders?category_id=` — **líderes de temporada por jugador** en 16 categorías (goles, asistencias, xG, tarjetas, salvadas, valla invicta...) 🆕
 - `GET /365scores/team-leaders?category_id=` — líderes de temporada por equipo 🆕
 

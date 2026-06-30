@@ -26,3 +26,8 @@ temp.txt
 create_routers.py
 setup_docs.py
 _smoke_test.py
+
+
+# Capturas de pantalla (no versionar; usar docs/ o el PDF oficial)
+Captura*.png
+*.screenshot.png

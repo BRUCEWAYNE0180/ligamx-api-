@@ -79,6 +79,14 @@ def team_leaders(category_id: int = Query(None)):
     return Scores365Scraper().get_team_season_leaders(category_id)
 
 
+@router.get("/news")
+@cached(300)
+def news(limit: int = Query(30, ge=1, le=100)):
+    """Noticias de Liga MX desde el feed propio de 365Scores (titulo, imagen,
+    url y fecha)."""
+    return Scores365Scraper().get_news(limit)
+
+
 @router.get("/matches/{game_id}/shots")
 @cached(120)
 def match_shots(game_id: int):

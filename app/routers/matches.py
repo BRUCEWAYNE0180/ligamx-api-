@@ -23,6 +23,43 @@ def get_matches(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=
         q = q.filter(models.Match.status == status)
     return q.order_by(models.Match.match_date).offset(offset).limit(limit).all()
 
+
+@router.get("/calendar")
+def get_calendar(season: str = Query(None, description="Etiqueta o ano; por defecto la temporada vigente"), db: Session = Depends(get_db)):
+    """Calendario completo de la temporada agrupado por jornada, con rival, fecha,
+    sede (nombre oficial), marcador y estado. Combina el fixture real (con los dos
+    equipos) y las sedes oficiales 2026."""
+    season_id = resolve_season_id(db, season)
+    q = (
+        db.query(models.Match)
+        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team), joinedload(models.Match.stadium))
+    )
+    if season_id is not None:
+        q = q.filter(models.Match.season_id == season_id)
+    matches = q.order_by(models.Match.week_number, models.Match.match_date).all()
+
+    jornadas = {}
+    for m in matches:
+        jn = m.week_number or 0
+        j = jornadas.setdefault(jn, {"jornada": m.week_number, "matches": []})
+        j["matches"].append({
+            "id": m.id,
+            "date": m.match_date,
+            "status": m.status,
+            "home_team": {"id": m.home_team_id, "name": m.home_team.name if m.home_team else None,
+                          "logo_url": m.home_team.logo_url if m.home_team else None},
+            "away_team": {"id": m.away_team_id, "name": m.away_team.name if m.away_team else None,
+                          "logo_url": m.away_team.logo_url if m.away_team else None},
+            "venue": m.stadium.name if m.stadium else None,
+            "score": {"home": m.home_score, "away": m.away_score},
+        })
+    return {
+        "season": season or "vigente",
+        "total_matches": len(matches),
+        "jornadas": [jornadas[k] for k in sorted(jornadas)],
+    }
+
+
 @router.get("/matches/upcoming", response_model=list[schemas.MatchResponse])
 def get_upcoming_matches(limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)):
     return db.query(models.Match).options(joinedload(models.Match.home_team), joinedload(models.Match.away_team)).filter(models.Match.match_date >= datetime.utcnow()).order_by(models.Match.match_date).limit(limit).all()
