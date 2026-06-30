@@ -82,7 +82,8 @@ detectado en los datos no coincide con el esperado.
       constante y `503` si falta `SYNC_API_KEY`; cabeceras `X-Content-Type-Options`,
       `X-Frame-Options`, `Referrer-Policy`.
 - [ ] Redis para caché compartido entre workers.
-- [ ] Versionado de API (`/v1/...`).
+- [x] **Versionado de API**: todas las rutas existen en la raíz (`/...`, legado) y
+      bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
 - Stats por jugador **persistidas en BD** (`player_match_stats`): historial
