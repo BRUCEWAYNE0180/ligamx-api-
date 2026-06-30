@@ -14,7 +14,7 @@ import subprocess
 from app.database import engine, Base
 from app import models
 from app.rate_limit import limiter
-from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search
+from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search, live
 
 # En desarrollo (SQLite) creamos las tablas automaticamente para arrancar sin
 # pasos extra. En produccion (PostgreSQL) el esquema lo gestiona Alembic
@@ -73,3 +73,4 @@ app.include_router(sofascore.router)
 app.include_router(scores365.router)
 app.include_router(extras.router)
 app.include_router(search.router)
+app.include_router(live.router)
