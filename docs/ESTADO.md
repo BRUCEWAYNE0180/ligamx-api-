@@ -49,7 +49,12 @@ detectado en los datos no coincide con el esperado.
       en 16 categorías + stats completas por jugador en cada partido).
 - [x] Persistir **árbitros** (`Match.referee`, cruce con 365Scores).
 - [ ] Lesionados/suspendidos y disponibilidad por jornada.
-- [ ] Liguilla/Play-In real (bracket ida/vuelta), no solo la foto de la tabla.
+- [x] **Liguilla/Play-In**: `GET /liguilla/bracket` arma el cuadro oficial
+      sembrado por la tabla (Play-In 7º-10º + Cuartos 1v8/2v7/3v6/4v5, a ida y
+      vuelta; semis/final con resiembra por posición).
+- [ ] Resultados reales por serie de Liguilla (las fuentes no exponen el bracket
+      con marcadores de forma estable; se podría capturar los partidos de playoff
+      por `stageName` de 365Scores en una iteración futura).
 - [x] **Histórico multi-temporada**: el sync ya NO borra todo: hace *upsert* de
       equipos/jugadores/estadios y reemplaza solo la temporada sincronizada, así
       se acumulan torneos. `GET /seasons` lista los disponibles y casi todos los

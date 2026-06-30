@@ -117,6 +117,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /seasons` — **temporadas/torneos disponibles** (histórico multi-temporada) 🆕
 - `GET /standings?season=` — tabla de posiciones (por defecto la temporada vigente) 🆕
 - `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)
+- `GET /liguilla/bracket?season=` — **cuadro oficial de Liguilla** (siembra Play-In + Cuartos 1v8/2v7/3v6/4v5, ida y vuelta) 🆕
 - `GET /top-scorers?season=` — tabla de goleo
 
 > El parámetro `season` acepta la etiqueta del torneo (`Apertura 2026`) o el año
