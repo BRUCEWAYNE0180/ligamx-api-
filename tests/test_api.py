@@ -721,3 +721,35 @@ def test_health_ready(client):
     assert body["ready"] is True
     assert body["checks"]["database"] == "ok"
     assert body["checks"]["redis"] in ("disabled", "ok")
+
+
+
+# ---------- Power ranking y perfiles ----------
+
+def test_power_ranking(client, seeded):
+    r = client.get("/power-ranking").json()
+    assert r["season"] == "Apertura 2026"
+    assert len(r["ranking"]) == 2
+    for row in r["ranking"]:
+        assert 0 <= row["rating"] <= 100
+        assert "team" in row and "ppg" in row and "rank" in row
+
+
+def test_player_profile(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/10/profile").json()
+    assert r["player"]["name"] == "Henry Martín"
+    assert r["player"]["team"]["name"] == "América"
+    assert r["season_stats"]["goals"] == 2
+    assert r["season_stats"]["xg"] == 1.2
+    assert len(r["recent_matches"]) >= 1
+
+
+def test_team_profile(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/teams/1/profile").json()
+    assert r["team"]["name"] == "América"
+    assert r["standing"]["position"] == 1
+    assert r["xg"] == 1.2
+    assert r["squad_size"] >= 1
+    assert "form" in r and "last_result" in r

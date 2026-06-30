@@ -148,6 +148,11 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /compare/players?a=&b=&season=` — **compara dos jugadores** lado a lado (goles, asistencias, xG, xA, rating...)
 - `GET /compare/teams?a=&b=&season=` — **compara dos equipos** (posición, puntos, registro, goles, xG)
 - `GET /predict?home=&away=&season=` — **predice un partido** (modelo Poisson): goles esperados, probabilidades 1/X/2 y marcador más probable
+- `GET /power-ranking?season=` — **ranking de poder** de equipos (puntos/partido + diferencia de goles, escala 0-100; xG informativo) 🆕
+
+### Perfiles 🆕
+- `GET /players/{id}/profile?season=` — **perfil completo del jugador** (ficha + agregado de temporada + últimos 5 partidos)
+- `GET /teams/{id}/profile?season=` — **perfil completo del equipo** (ficha+sede, posición, forma, xG, plantilla, próximo partido y último resultado)
 
 ### Tiempo real (SSE)
 - `GET /live/stream?interval=&max_seconds=` — **marcadores en vivo por streaming** (Server-Sent Events). El servidor empuja un evento `live` con los partidos en curso cuando cambian. Ej: `new EventSource("/live/stream")` 🆕

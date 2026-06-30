@@ -7,7 +7,7 @@ sin dependencias externas ni ML.
 import math
 import unicodedata
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.database import get_db
 from app.dependencies import get_or_404, resolve_season_label, resolve_season_id
@@ -153,4 +153,49 @@ def predict_match(home: int = Query(..., description="team_id local"),
         "most_likely_score": {"home": best_score[0], "away": best_score[1],
                               "probability": round(best_p, 3)},
         "model": "Poisson (fuerzas de ataque/defensa vs media de liga + ventaja de local)",
+    }
+
+
+
+# ---------- Power ranking ----------
+@router.get("/power-ranking")
+def power_ranking(season: str = Query(None), db: Session = Depends(get_db)):
+    """Ranking de poder de los equipos: combina puntos por partido (70%) y
+    diferencia de goles por partido (30%) en un rating 0-100. El xG se incluye
+    como dato informativo del rendimiento subyacente."""
+    season_id = resolve_season_id(db, season)
+    label = resolve_season_label(db, season)
+    standings = []
+    if season_id is not None:
+        standings = (db.query(models.Standing).options(joinedload(models.Standing.team))
+                     .filter(models.Standing.season_id == season_id).all())
+
+    M = models.PlayerMatchStat
+    xg_rows = (db.query(M.team_id, func.sum(M.xg)).filter(M.season == label)
+               .group_by(M.team_id).all())
+    xg_by_team = {tid: float(x or 0) for tid, x in xg_rows}
+
+    out = []
+    for s in standings:
+        played = s.played or 0
+        ppg = s.points / played if played else 0.0
+        gdpg = s.goal_difference / played if played else 0.0
+        rating = round(min(100, max(0, (ppg / 3) * 70 + ((gdpg + 3) / 6) * 30)), 1)
+        out.append({
+            "team": {"id": s.team_id, "name": s.team.name if s.team else None,
+                     "logo_url": s.team.logo_url if s.team else None},
+            "rating": rating,
+            "played": played,
+            "ppg": round(ppg, 2),
+            "gd_per_game": round(gdpg, 2),
+            "xg": round(xg_by_team.get(s.team_id, 0.0), 2),
+            "table_position": s.position,
+        })
+    out.sort(key=lambda r: r["rating"], reverse=True)
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return {
+        "season": label,
+        "formula": "70% puntos/partido + 30% diferencia de goles/partido (escala 0-100); xG informativo",
+        "ranking": out,
     }

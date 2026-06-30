@@ -89,6 +89,8 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- **Power ranking** (`/power-ranking`) y **perfiles completos** de jugador
+  (`/players/{id}/profile`) y equipo (`/teams/{id}/profile`) en una sola llamada.
 - `GET /dashboard`: resumen de la temporada en una llamada (líder, goleador,
   próximos, resultados, noticias). `GET /health/ready`: readiness (BD + Redis).
   Metadata y tags en `/docs`.

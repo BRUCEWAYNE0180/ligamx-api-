@@ -199,3 +199,39 @@ def get_player_season_stats(player_id: int, season: str = Query(None), db: Sessi
         "xa": round(_sum("xa"), 2),
         "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
     }
+
+
+
+@router.get("/players/{player_id}/profile")
+def get_player_profile(player_id: int, season: str = Query(None), db: Session = Depends(get_db)):
+    """Perfil completo del jugador en una llamada: ficha, agregado de la temporada
+    y sus ultimos 5 partidos."""
+    player = get_or_404(db, models.Player, player_id)
+    label = resolve_season_label(db, season)
+    rows = _player_match_rows(db, player.name, label)
+
+    def _sum(attr):
+        return sum(getattr(r, attr) or 0 for r in rows)
+
+    ratings = [r.rating for r in rows if r.rating is not None]
+    team = db.query(models.Team).filter(models.Team.id == player.team_id).first()
+    recent = sorted(rows, key=lambda r: (r.match_id is None, r.match_id), reverse=True)[:5]
+    return {
+        "player": {
+            "id": player.id, "name": player.name, "position": player.position,
+            "number": player.number, "nationality": player.nationality,
+            "photo_url": player.photo_url,
+            "team": {"id": team.id, "name": team.name, "logo_url": team.logo_url} if team else None,
+        },
+        "season": label,
+        "season_stats": {
+            "appearances": len(rows), "minutes": _sum("minutes"), "goals": _sum("goals"),
+            "assists": _sum("assists"), "shots": _sum("shots"),
+            "xg": round(_sum("xg"), 2), "xa": round(_sum("xa"), 2),
+            "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
+        },
+        "recent_matches": [
+            {"match_id": r.match_id, "minutes": r.minutes, "goals": r.goals,
+             "assists": r.assists, "rating": r.rating} for r in recent
+        ],
+    }
