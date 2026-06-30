@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import verify_api_key
 from app.rate_limit import limiter, SYNC_LIMIT
+from app.season import to_naive_utc
 from app.services.sync_service import run_sync_with_log, run_backfill_with_log
 from app import models
 
@@ -66,7 +67,7 @@ def sync_status(db: Session = Depends(get_db)):
 
     age_seconds = None
     if last_success and last_success.finished_at:
-        age_seconds = (datetime.utcnow() - last_success.finished_at).total_seconds()
+        age_seconds = (datetime.utcnow() - to_naive_utc(last_success.finished_at)).total_seconds()
 
     return {
         "last_sync": serialize(last),

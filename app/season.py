@@ -8,7 +8,17 @@ Como ambos torneos caen en el mismo ano, identificar la temporada solo por el
 ano (p. ej. "2026") es ambiguo. Estas funciones resuelven el torneo vigente a
 partir del mes, para etiquetar los datos de forma clara (p. ej. "Apertura 2026").
 """
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def to_naive_utc(dt):
+    """Normaliza un datetime a UTC *naive*. Evita el crash al comparar/restar
+    fechas tz-aware (p. ej. de datos viejos en Postgres) con datetime.utcnow()."""
+    if dt is None:
+        return None
+    if getattr(dt, "tzinfo", None) is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def current_tournament(now: datetime = None):
