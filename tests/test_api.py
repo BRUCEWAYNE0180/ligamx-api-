@@ -696,3 +696,28 @@ def test_predict_sin_datos(client, db):
     db.commit()
     # sin standings con partidos jugados -> 400
     assert client.get("/predict", params={"home": 1, "away": 2}).status_code == 400
+
+
+
+# ---------- Dashboard y readiness ----------
+
+def test_dashboard(client, seeded):
+    r = client.get("/dashboard").json()
+    assert r["season"] == "Apertura 2026"
+    # líder de la tabla = América (posición 1 sembrada)
+    assert r["standings_leader"]["team"]["name"] == "América"
+    assert r["standings_leader"]["position"] == 1
+    # claves presentes (listas, aunque vacías)
+    for k in ("top_scorer", "upcoming_matches", "recent_results", "latest_news"):
+        assert k in r
+    # hay 1 partido finalizado sembrado -> aparece en recent_results
+    assert len(r["recent_results"]) == 1
+
+
+def test_health_ready(client):
+    r = client.get("/health/ready")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ready"] is True
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] in ("disabled", "ok")
