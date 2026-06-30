@@ -31,3 +31,15 @@ def test_torneo_desde_partidos_reales():
 def test_torneo_sin_fechas_no_truena():
     res = tournament_from_matches([])
     assert isinstance(res[0], str) and isinstance(res[1], int)
+
+
+
+def test_to_naive_utc():
+    from datetime import datetime, timezone
+    from app.season import to_naive_utc
+    aware = datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)
+    n = to_naive_utc(aware)
+    assert n.tzinfo is None and n == datetime(2026, 7, 1, 18, 0)
+    assert to_naive_utc(None) is None
+    naive = datetime(2026, 7, 1, 12, 0)
+    assert to_naive_utc(naive) == naive  # naive se queda igual

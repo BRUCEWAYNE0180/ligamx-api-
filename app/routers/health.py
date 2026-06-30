@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
-from app.season import current_tournament, current_season_name
+from app.season import current_tournament, current_season_name, to_naive_utc
 from app.metrics import metrics
 from app.cache import cache_stats
 
@@ -41,7 +41,7 @@ def season_info(db: Session = Depends(get_db)):
         .first()
     )
     now = datetime.utcnow()
-    first_date = first.match_date if first else None
+    first_date = to_naive_utc(first.match_date if first else None)
     started = bool(first_date and first_date <= now)
     return {
         "tournament_now": current_season_name(),
