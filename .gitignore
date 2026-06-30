@@ -1,19 +1,28 @@
+# Entornos virtuales
 venv/
+.venv/
+env/
+
+# Python
 __pycache__/
 *.pyc
+
+# Bases de datos locales
 *.db
-*.bak
-.DS_Store
+ligamx.db
+
+# Entorno / secretos
 .env
+
+# Varios
 *.bak
 *.html
-__pycache__/
-*.pyc
-.env
-ligamx.db
 .DS_Store
+
+# Archivos de trabajo temporales
 codigo_clave.txt
 resto_del_proyecto.txt
 temp.txt
 create_routers.py
 setup_docs.py
+_smoke_test.py

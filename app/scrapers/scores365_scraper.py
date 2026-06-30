@@ -9,7 +9,7 @@ Competencia Liga MX = 141.
 """
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 import requests
 
@@ -42,9 +42,12 @@ def _parse_date(value):
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
     except (ValueError, TypeError):
         return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 class Scores365Scraper(BaseScraper):

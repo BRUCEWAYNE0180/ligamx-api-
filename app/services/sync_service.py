@@ -5,6 +5,7 @@ from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
 from app.scrapers.sync_all_stats import sync_all_stats
 from app.scrapers.sofascore_scraper import get_events as get_sofascore_events
+from app.scrapers import extras_scraper
 from app import models
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,38 @@ def _sync_sofascore_event_ids(db):
     except Exception as e:
         logger.warning(f"SofaScore event ID sync failed: {e}")
 
+def _enrich_team_assets(db):
+    """Enriquece equipos y estadios con datos de TheSportsDB (cruzando por
+    idESPN): ano de fundacion, escudo (si falta) y capacidad del estadio.
+    Fuente complementaria, no critica."""
+    try:
+        assets = extras_scraper.get_team_assets()
+        if not assets:
+            return
+        by_espn = {a["espn_team_id"]: a for a in assets if a.get("espn_team_id")}
+        updated_teams = 0
+        updated_stadiums = 0
+        for team in db.query(models.Team).all():
+            a = by_espn.get(team.id)
+            if not a:
+                continue
+            if a.get("founded") and not team.founded:
+                team.founded = a["founded"]
+            if a.get("badge") and not team.logo_url:
+                team.logo_url = a["badge"]
+            db.add(team)
+            updated_teams += 1
+            if team.stadium and a.get("stadium_capacity") and not team.stadium.capacity:
+                team.stadium.capacity = a["stadium_capacity"]
+                db.add(team.stadium)
+                updated_stadiums += 1
+        db.commit()
+        logger.info(f"TheSportsDB enrich: {updated_teams} equipos, {updated_stadiums} estadios")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Enriquecimiento TheSportsDB fallo (no critico): {e}")
+
+
 def run_sync(db, source: str = "espn"):
     """Ejecuta la sincronizacion completa de datos.
 
@@ -111,19 +144,22 @@ def run_sync(db, source: str = "espn"):
 
     # -------- FASE 2: WRITE (una sola transaccion) --------
     try:
-        # Limpiar tablas core
+        # Limpiar tablas core.
+        # IMPORTANTE: se borran primero las tablas HIJAS (con FK) y luego las
+        # PADRES, para no violar claves foraneas en Postgres. El bulk delete
+        # de SQLAlchemy NO dispara el cascade del ORM, asi que el orden importa.
         for m in [
-            models.Standing,
+            models.MatchEvent,
+            models.MatchLineup,
             models.MatchStat,
             models.PlayerStat,
+            models.Standing,
             models.Match,
             models.Player,
             models.Week,
             models.Team,
             models.Stadium,
             models.Season,
-            models.MatchEvent,
-            models.MatchLineup,
         ]:
             db.query(m).delete()
 
@@ -146,6 +182,7 @@ def run_sync(db, source: str = "espn"):
                 city=t.get("city"),
                 colors=t.get("colors"),
                 founded=t.get("founded"),
+                logo_url=t.get("logo_url"),
                 stadium_id=smap.get(t.get("stadium_name")),
             )
             db.add(tm)
@@ -218,6 +255,9 @@ def run_sync(db, source: str = "espn"):
         raise
 
     # -------- FASE 3: ENRICH (aislado, no critico) --------
+    # Escudos, fundacion y capacidad via TheSportsDB (cruce por idESPN)
+    _enrich_team_assets(db)
+
     # Stats avanzados
     try:
         sync_all_stats(db, raw_matches, scraper, tmap, str(current_year))

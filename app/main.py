@@ -21,7 +21,7 @@ def auto_sync():
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     subprocess.run([python, "sync.py"], cwd=project_root)
 
-if os.getenv("RUN_SCHEDULER", "true").lower() == "true":
+if os.getenv("RUN_SCHEDULER", "false").lower() == "true":
     scheduler.add_job(auto_sync, "interval", hours=6)
     scheduler.start()
 

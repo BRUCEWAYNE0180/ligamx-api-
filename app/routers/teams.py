@@ -49,3 +49,52 @@ def get_team_stats(team_id: int, season: str = Query("2026"), db: Session = Depe
             possession_sum += s.possession
             count += 1
     return {"team_id": team_id, "season": season, "matches": len(stats), "possession_avg": round(possession_sum / count, 1) if count else None, "totals": totals}
+
+
+
+@router.get("/teams/{team_id}/form")
+def get_team_form(team_id: int, limit: int = Query(5, ge=1, le=20), db: Session = Depends(get_db)):
+    """Forma reciente del equipo: ultimos N partidos jugados con resultado
+    (W/D/L) desde la perspectiva del equipo, mas el racha en texto."""
+    get_or_404(db, models.Team, team_id)
+    matches = (
+        db.query(models.Match)
+        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+        .filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id))
+        .filter(models.Match.status == "finished")
+        .filter(models.Match.home_score != None, models.Match.away_score != None)
+        .order_by(models.Match.match_date.desc())
+        .limit(limit)
+        .all()
+    )
+
+    results = []
+    summary = {"W": 0, "D": 0, "L": 0}
+    for m in matches:
+        is_home = m.home_team_id == team_id
+        gf = m.home_score if is_home else m.away_score
+        ga = m.away_score if is_home else m.home_score
+        if gf > ga:
+            outcome = "W"
+        elif gf < ga:
+            outcome = "L"
+        else:
+            outcome = "D"
+        summary[outcome] += 1
+        opponent = m.away_team if is_home else m.home_team
+        results.append({
+            "match_id": m.id,
+            "date": m.match_date,
+            "home": is_home,
+            "opponent": opponent.name if opponent else None,
+            "score": f"{gf}-{ga}",
+            "result": outcome,
+        })
+
+    return {
+        "team_id": team_id,
+        "played": len(results),
+        "summary": summary,
+        "form": "".join(r["result"] for r in results),
+        "matches": results,
+    }

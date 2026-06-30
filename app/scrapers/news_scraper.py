@@ -1,49 +1,86 @@
+"""Noticias de Liga MX via RSS (feedparser).
+
+Antes se usaba Playwright + Chromium para raspar Flashscore, lo cual era
+fragil (anti-bot, selectores que cambian) y pesado (descargaba un navegador
+completo en cada build). Ahora se leen feeds RSS publicos en espanol, que son
+estables, rapidos y sin dependencias pesadas.
+
+Fuentes:
+- Google Noticias (busqueda "Liga MX") -> agrega muchos medios mexicanos.
+- ESPN Deportes (futbol mexicano).
+"""
 from datetime import datetime
+from time import mktime
 from typing import List, Dict
 import logging
-from playwright.sync_api import sync_playwright
+
+import feedparser
 
 logger = logging.getLogger(__name__)
 
-def fetch_flashscore_news(limit: int = 20) -> List[Dict]:
-    try:
-        url = "https://www.flashscore.com.mx/futbol/mexico/liga-mx/noticias/"
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="networkidle")
-            page.wait_for_timeout(3000)
-            
-            articles = page.query_selector_all("a[class*='wcl-article']")
-            
-            news = []
-            for article in articles[:limit]:
-                try:
-                    title_elem = article.query_selector("h3")
-                    if not title_elem:
-                        continue
-                    title = title_elem.inner_text().strip()
-                    
-                    href = article.get_attribute("href")
-                    if href and href.startswith("/"):
-                        href = f"https://www.flashscore.com.mx{href}"
-                    
-                    news.append({
-                        "title": title,
-                        "link": href,
-                        "description": title,
-                        "published_at": datetime.now(),
-                        "source": "flashscore"
-                    })
-                except Exception:
-                    continue
-            
-            browser.close()
-            return news
-    except Exception as e:
-        logger.warning(f"Flashscore news failed: {e}")
-        return []
+# (url_del_feed, nombre_fuente)
+RSS_FEEDS = [
+    ("https://news.google.com/rss/search?q=Liga+MX+cuando:7d&hl=es-419&gl=MX&ceid=MX:es-419", "Google News"),
+    ("https://news.google.com/rss/search?q=%22Liga+MX%22+Apertura&hl=es-419&gl=MX&ceid=MX:es-419", "Google News"),
+    ("https://www.espn.com.mx/espn/rss/futbol/mexico/news", "ESPN Deportes"),
+]
 
-def fetch_news(limit: int = 20) -> List[Dict]:
-    return fetch_flashscore_news(limit)
+
+def _published_to_dt(entry):
+    parsed = entry.get("published_parsed") or entry.get("updated_parsed")
+    if parsed:
+        try:
+            return datetime.fromtimestamp(mktime(parsed))
+        except (ValueError, OverflowError, TypeError):
+            return None
+    return None
+
+
+def _clean(text: str) -> str:
+    if not text:
+        return ""
+    # feedparser ya decodifica entidades; recortamos espacios sobrantes
+    return " ".join(text.split()).strip()
+
+
+def fetch_news(limit: int = 50) -> List[Dict]:
+    """Devuelve noticias recientes de Liga MX, deduplicadas por enlace."""
+    news: List[Dict] = []
+    seen_links = set()
+
+    for url, source in RSS_FEEDS:
+        try:
+            feed = feedparser.parse(url)
+        except Exception as e:
+            logger.warning(f"RSS fallo ({source}): {e}")
+            continue
+
+        for entry in feed.entries:
+            link = entry.get("link")
+            title = _clean(entry.get("title", ""))
+            if not link or not title or link in seen_links:
+                continue
+            seen_links.add(link)
+
+            # Google News expone el medio real en entry.source.title
+            real_source = source
+            src = entry.get("source")
+            if isinstance(src, dict) and src.get("title"):
+                real_source = _clean(src["title"])
+
+            news.append({
+                "title": title,
+                "link": link,
+                "description": _clean(entry.get("summary", ""))[:500] or title,
+                "source": real_source,
+                "published_at": _published_to_dt(entry),
+            })
+
+    # Mas recientes primero (los que no traen fecha van al final)
+    news.sort(key=lambda n: n["published_at"] or datetime.min, reverse=True)
+    return news[:limit]
+
+
+# Compatibilidad con codigo previo
+def fetch_flashscore_news(limit: int = 20) -> List[Dict]:
+    return fetch_news(limit)
