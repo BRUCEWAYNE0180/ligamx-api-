@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import unicodedata
 from app.database import get_db
-from app.dependencies import get_or_404, resolve_season_label
+from app.dependencies import get_or_404, resolve_season_label, resolve_season_id
 from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
 from app.cache import cached
 from app import models, schemas
@@ -148,4 +148,69 @@ def get_team_form(team_id: int, limit: int = Query(5, ge=1, le=20), db: Session 
         "summary": summary,
         "form": "".join(r["result"] for r in results),
         "matches": results,
+    }
+
+
+
+@router.get("/teams/{team_id}/profile")
+def get_team_profile(team_id: int, season: str = Query(None), db: Session = Depends(get_db)):
+    """Perfil completo del equipo en una llamada: ficha + sede, posicion en la
+    tabla, forma reciente, xG, tamano de plantilla, proximo partido y ultimo
+    resultado."""
+    team = get_or_404(db, models.Team, team_id)
+    label = resolve_season_label(db, season)
+    season_id = resolve_season_id(db, season)
+
+    standing = None
+    if season_id is not None:
+        st = db.query(models.Standing).filter(models.Standing.season_id == season_id,
+                                               models.Standing.team_id == team_id).first()
+        if st:
+            standing = {"position": st.position, "points": st.points, "played": st.played,
+                        "won": st.won, "drawn": st.drawn, "lost": st.lost,
+                        "goals_for": st.goals_for, "goals_against": st.goals_against,
+                        "goal_difference": st.goal_difference}
+
+    finished = (db.query(models.Match)
+                .filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id),
+                        models.Match.status == "finished",
+                        models.Match.home_score.isnot(None), models.Match.away_score.isnot(None))
+                .order_by(models.Match.match_date.desc()).limit(5).all())
+    form = ""
+    for m in finished:
+        gf = m.home_score if m.home_team_id == team_id else m.away_score
+        ga = m.away_score if m.home_team_id == team_id else m.home_score
+        form += "W" if gf > ga else ("L" if gf < ga else "D")
+
+    M = models.PlayerMatchStat
+    xg = db.query(func.sum(M.xg)).filter(M.team_id == team_id, M.season == label).scalar()
+    goals = db.query(func.sum(M.goals)).filter(M.team_id == team_id, M.season == label).scalar()
+    squad = db.query(func.count(models.Player.id)).filter(models.Player.team_id == team_id).scalar()
+
+    nxt = (db.query(models.Match).options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+           .filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id),
+                   models.Match.match_date >= datetime.utcnow())
+           .order_by(models.Match.match_date).first())
+
+    def _brief(m):
+        if not m:
+            return None
+        return {"id": m.id, "date": m.match_date, "status": m.status,
+                "home": m.home_team.name if m.home_team else None,
+                "away": m.away_team.name if m.away_team else None,
+                "score": {"home": m.home_score, "away": m.away_score}}
+
+    last = finished[0] if finished else None
+    return {
+        "team": {"id": team.id, "name": team.name, "logo_url": team.logo_url,
+                 "city": team.city, "founded": team.founded,
+                 "stadium": {"name": team.stadium.name, "capacity": team.stadium.capacity} if team.stadium else None},
+        "season": label,
+        "standing": standing,
+        "form": form,
+        "xg": round(float(xg or 0), 2),
+        "goals": int(goals or 0),
+        "squad_size": squad,
+        "next_match": _brief(nxt),
+        "last_result": _brief(last),
     }
