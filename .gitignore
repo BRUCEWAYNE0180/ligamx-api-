@@ -5,3 +5,15 @@ __pycache__/
 *.bak
 .DS_Store
 .env
+*.bak
+*.html
+__pycache__/
+*.pyc
+.env
+ligamx.db
+.DS_Store
+codigo_clave.txt
+resto_del_proyecto.txt
+temp.txt
+create_routers.py
+setup_docs.py

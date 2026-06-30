@@ -72,7 +72,8 @@ class ESPNRequestsScraper(BaseScraper):
             if v is None or v=="": return None
             try: return int(v)
             except (ValueError, TypeError): return None
-        ranges=[("20250701","20250731"),("20250801","20250831"),("20250901","20250930"),("20251001","20251031"),("20251101","20251130"),("20251201","20251231")]
+        year = season_id or datetime.now().year
+        ranges=[(f"{year}0701",f"{year}0731"),(f"{year}0801",f"{year}0831"),(f"{year}0901",f"{year}0930"),(f"{year}1001",f"{year}1031"),(f"{year}1101",f"{year}1130"),(f"{year}1201",f"{year}1231")]
         for start, end in ranges:
             url=f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard?region=mx&lang=es&dates={start}-{end}"
             try:
