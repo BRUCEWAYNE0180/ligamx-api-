@@ -455,6 +455,9 @@ def _upsert_players(db, players, tmap):
         pl.nationality = p.get("nationality") or pl.nationality
         pl.birth_date = p.get("birth_date") or pl.birth_date
         pl.photo_url = p.get("photo_url") or pl.photo_url
+        pl.flag_url = p.get("flag_url") or pl.flag_url
+        pl.height = p.get("height") or pl.height
+        pl.weight = p.get("weight") or pl.weight
         tid = tmap.get(p.get("team_name"))
         if tid:
             pl.team_id = tid

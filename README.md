@@ -155,7 +155,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /power-ranking?season=` — **ranking de poder** de equipos (puntos/partido + diferencia de goles, escala 0-100; xG informativo) 🆕
 
 ### Perfiles 🆕
-- `GET /players/{id}/profile?season=` — **perfil completo del jugador** (ficha + agregado de temporada + últimos 5 partidos)
+- `GET /players/{id}/profile?season=` — **perfil completo del jugador** (ficha + bio: edad, nacionalidad con bandera, altura, peso + agregado de temporada + últimos 5 partidos) 🆕
 - `GET /teams/{id}/profile?season=` — **perfil completo del equipo** (ficha+sede, posición, forma, xG, plantilla, próximo partido y último resultado)
 - `GET /players/identity-map` — **diagnóstico del cruce de identidad** ESPN↔365Scores: cuántos jugadores tienen mapeado su id de 365Scores y la cobertura del cruce 🆕
 

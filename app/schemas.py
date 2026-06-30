@@ -33,6 +33,9 @@ class PlayerBase(BaseModel):
     nationality: Optional[str] = None
     birth_date: Optional[str] = None
     photo_url: Optional[str] = None
+    flag_url: Optional[str] = None
+    height: Optional[str] = None
+    weight: Optional[str] = None
 
 class PlayerResponse(PlayerBase):
     id: int
