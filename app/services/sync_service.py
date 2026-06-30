@@ -74,127 +74,170 @@ def _sync_sofascore_event_ids(db):
         logger.warning(f"SofaScore event ID sync failed: {e}")
 
 def run_sync(db, source: str = "espn"):
-    """Ejecuta la sincronizacion completa de datos."""
+    """Ejecuta la sincronizacion completa de datos.
+
+    Estrategia segura:
+      1. FETCH: se descargan TODOS los datos externos a memoria primero.
+         Si alguna fuente critica falla, se aborta sin tocar la BD,
+         conservando los datos previos intactos.
+      2. WRITE: borrado + insercion dentro de UNA sola transaccion.
+         Si la escritura falla, se hace rollback y los datos viejos quedan.
+      3. ENRICH: stats avanzados, SofaScore y noticias se ejecutan de forma
+         aislada; un fallo en estas etapas NO invalida el sync principal.
+    """
     logger.info(f"Iniciando sincronizacion desde {source}")
     scraper = get_scraper(source)
 
-    # Limpiar tablas core
-    for m in [
-        models.Standing,
-        models.MatchStat,
-        models.PlayerStat,
-        models.Match,
-        models.Player,
-        models.Week,
-        models.Team,
-        models.Stadium,
-        models.Season,
-        models.MatchEvent,
-        models.MatchLineup,
-    ]:
-        db.query(m).delete()
-    db.commit()
+    # -------- FASE 1: FETCH (sin tocar la BD) --------
+    # Si algo critico falla aqui, abortamos antes de borrar nada.
+    try:
+        raw_stadiums = scraper.get_stadiums()
+        raw_teams = scraper.get_teams()
+        raw_players = scraper.get_players()
+        raw_matches = scraper.get_matches()
+        raw_standings = scraper.get_standings()
+    except Exception as e:
+        logger.error(f"Sync abortado: fallo al obtener datos de {source}: {e}. "
+                     f"Los datos previos se conservan intactos.")
+        raise
 
-    # Estadios
-    smap = {}
-    for s in scraper.get_stadiums():
-        st = models.Stadium(**s)
-        db.add(st)
-        db.flush()
-        smap[s["name"]] = st.id
+    if not raw_teams or not raw_matches:
+        logger.error("Sync abortado: el scraper no devolvio equipos/partidos. "
+                     "Los datos previos se conservan intactos.")
+        raise ValueError("Datos insuficientes del scraper; se aborta para no vaciar la BD")
 
-    # Equipos
-    tmap = {}
-    team_count = 0
-    for t in scraper.get_teams():
-        tm = models.Team(
-            id=t["id"],
-            name=t["name"],
-            short_name=t.get("short_name"),
-            city=t.get("city"),
-            colors=t.get("colors"),
-            founded=t.get("founded"),
-            stadium_id=smap.get(t.get("stadium_name")),
-        )
-        db.add(tm)
-        db.flush()
-        tmap[t["name"]] = tm.id
-        tmap[t["id"]] = tm.id
-        team_count += 1
-
-    # Jugadores
-    for p in scraper.get_players():
-        db.add(
-            models.Player(
-                id=p["id"],
-                name=p["name"],
-                position=p.get("position"),
-                number=p.get("number"),
-                nationality=p.get("nationality"),
-                birth_date=p.get("birth_date"),
-                photo_url=p.get("photo_url"),
-                team_id=tmap.get(p.get("team_name")),
-            )
-        )
-
-    # Temporada
+    calculate_week_numbers(raw_matches)
     current_year = datetime.now().year
-    sn = models.Season(name=str(current_year), year=current_year, tournament_type="Liga MX")
-    db.add(sn)
-    db.flush()
 
-    # Partidos
-    matches = scraper.get_matches()
-    calculate_week_numbers(matches)
+    # -------- FASE 2: WRITE (una sola transaccion) --------
+    try:
+        # Limpiar tablas core
+        for m in [
+            models.Standing,
+            models.MatchStat,
+            models.PlayerStat,
+            models.Match,
+            models.Player,
+            models.Week,
+            models.Team,
+            models.Stadium,
+            models.Season,
+            models.MatchEvent,
+            models.MatchLineup,
+        ]:
+            db.query(m).delete()
 
-    for m in matches:
-        hid = tmap.get(m.get("home_team_id")) or tmap.get(m.get("home_team"))
-        aid = tmap.get(m.get("away_team_id")) or tmap.get(m.get("away_team"))
-        if hid and aid:
+        # Estadios
+        smap = {}
+        for s in raw_stadiums:
+            st = models.Stadium(**s)
+            db.add(st)
+            db.flush()
+            smap[s["name"]] = st.id
+
+        # Equipos
+        tmap = {}
+        team_count = 0
+        for t in raw_teams:
+            tm = models.Team(
+                id=t["id"],
+                name=t["name"],
+                short_name=t.get("short_name"),
+                city=t.get("city"),
+                colors=t.get("colors"),
+                founded=t.get("founded"),
+                stadium_id=smap.get(t.get("stadium_name")),
+            )
+            db.add(tm)
+            db.flush()
+            tmap[t["name"]] = tm.id
+            tmap[t["id"]] = tm.id
+            team_count += 1
+
+        # Jugadores
+        for p in raw_players:
             db.add(
-                models.Match(
-                    season_id=sn.id,
-                    home_team_id=hid,
-                    away_team_id=aid,
-                    match_date=m.get("match_date"),
-                    home_score=m.get("home_score"),
-                    away_score=m.get("away_score"),
-                    status=m.get("status", "scheduled"),
-                    week_number=m.get("week"),
+                models.Player(
+                    id=p["id"],
+                    name=p["name"],
+                    position=p.get("position"),
+                    number=p.get("number"),
+                    nationality=p.get("nationality"),
+                    birth_date=p.get("birth_date"),
+                    photo_url=p.get("photo_url"),
+                    team_id=tmap.get(p.get("team_name")),
                 )
             )
 
-    # Standings
-    for s in scraper.get_standings():
-        db.add(
-            models.Standing(
-                season_id=sn.id,
-                team_id=tmap.get(s.get("team_name")),
-                position=s["position"],
-                played=s["played"],
-                won=s["won"],
-                drawn=s["drawn"],
-                lost=s["lost"],
-                goals_for=s["goals_for"],
-                goals_against=s["goals_against"],
-                goal_difference=s["goals_for"] - s["goals_against"],
-                points=s["points"],
+        # Temporada
+        sn = models.Season(name=str(current_year), year=current_year, tournament_type="Liga MX")
+        db.add(sn)
+        db.flush()
+
+        # Partidos
+        for m in raw_matches:
+            hid = tmap.get(m.get("home_team_id")) or tmap.get(m.get("home_team"))
+            aid = tmap.get(m.get("away_team_id")) or tmap.get(m.get("away_team"))
+            if hid and aid:
+                db.add(
+                    models.Match(
+                        season_id=sn.id,
+                        home_team_id=hid,
+                        away_team_id=aid,
+                        match_date=m.get("match_date"),
+                        home_score=m.get("home_score"),
+                        away_score=m.get("away_score"),
+                        status=m.get("status", "scheduled"),
+                        week_number=m.get("week"),
+                    )
+                )
+
+        # Standings
+        for s in raw_standings:
+            db.add(
+                models.Standing(
+                    season_id=sn.id,
+                    team_id=tmap.get(s.get("team_name")),
+                    position=s["position"],
+                    played=s["played"],
+                    won=s["won"],
+                    drawn=s["drawn"],
+                    lost=s["lost"],
+                    goals_for=s["goals_for"],
+                    goals_against=s["goals_against"],
+                    goal_difference=s["goals_for"] - s["goals_against"],
+                    points=s["points"],
+                )
             )
-        )
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Sync fallo durante la escritura, rollback aplicado. "
+                     f"Los datos previos se conservan: {e}")
+        raise
 
+    # -------- FASE 3: ENRICH (aislado, no critico) --------
     # Stats avanzados
-    sync_all_stats(db, matches, scraper, tmap, str(current_year))
+    try:
+        sync_all_stats(db, raw_matches, scraper, tmap, str(current_year))
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"sync_all_stats fallo (no critico): {e}")
 
-    # SofaScore event IDs
+    # SofaScore event IDs (puede fallar por bloqueo de Cloudflare/403)
     _sync_sofascore_event_ids(db)
 
-    # News sync
-    db.query(models.News).delete()
-    for n in fetch_news(limit=50):
-        db.add(models.News(**n))
-    db.commit()
+    # News sync (aislado para no invalidar el resto)
+    try:
+        news_items = fetch_news(limit=50)
+        db.query(models.News).delete()
+        for n in news_items:
+            db.add(models.News(**n))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Sync de noticias fallo (no critico): {e}")
 
     logger.info("Sincronizacion completada")
 
