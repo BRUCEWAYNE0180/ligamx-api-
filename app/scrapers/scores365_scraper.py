@@ -474,3 +474,24 @@ class Scores365Scraper(BaseScraper):
                 "away": _player(c.get("awayPlayer")),
             })
         return {"game_id": game_id, "categories": categories}
+
+
+    def get_news(self, limit: int = 30) -> List[Dict]:
+        """Noticias de Liga MX desde 365Scores (feed propio, especifico de la
+        competencia): titulo, imagen, url de la fuente y fecha de publicacion."""
+        try:
+            data = self._get_json("news/", {"competitions": COMPETITION_ID})
+        except Exception as e:
+            logger.warning(f"365scores news fallo: {e}")
+            return []
+        out = []
+        for n in data.get("news", []) or []:
+            out.append({
+                "id": n.get("id"),
+                "title": n.get("title"),
+                "url": n.get("url"),
+                "image": n.get("image"),
+                "published_at": n.get("publishDate"),
+                "is_magazine": bool(n.get("isMagazine")),
+            })
+        return out[:limit]

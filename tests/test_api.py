@@ -571,3 +571,37 @@ def test_estadios_oficiales_2026():
     names = {s["name"] for s in STADIUMS.values()}
     assert "Estadio Azteca" not in names
     assert "Estadio Alfonso Lastras" not in names
+
+
+
+# ---------- Calendario, noticias 365 y xG de temporada ----------
+
+def test_calendar(client, seeded):
+    r = client.get("/calendar").json()
+    assert r["total_matches"] == 1
+    j1 = r["jornadas"][0]
+    assert j1["jornada"] == 1
+    m = j1["matches"][0]
+    assert m["home_team"]["name"] == "América"
+    assert m["away_team"]["name"] == "Chivas"
+    assert m["score"] == {"home": 2, "away": 1}
+    assert "venue" in m
+
+
+def test_365_news(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_news",
+                        lambda self, limit=30: [{"id": 1, "title": "Fichaje bomba",
+                                                 "url": "http://x", "image": "http://i",
+                                                 "published_at": "2026-06-30", "is_magazine": False}])
+    r = client.get("/365scores/news").json()
+    assert r[0]["title"] == "Fichaje bomba"
+
+
+def test_xg_performance(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/xg-performance").json()
+    top = r[0]
+    assert top["player"] == "Henry Martín"
+    assert top["goals"] == 2 and top["xg"] == 1.2
+    assert top["diff"] == 0.8  # 2 goles - 1.2 xG (sobre-rendimiento)

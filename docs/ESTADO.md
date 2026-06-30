@@ -88,6 +88,10 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- `GET /calendar`: calendario por jornada con rival, sede oficial y marcador.
+- `GET /365scores/news`: noticias de Liga MX (feed propio de 365Scores).
+- `GET /players/xg-performance`: rendimiento goles vs xG (sobre/bajo-rendimiento).
+- Capturas del calendario sacadas del control de versiones (queda el PDF oficial).
 - Estadios con nombres **oficiales del Apertura 2026** (calendario LIGA BBVA):
   Azteca → **Estadio Banorte** (América) y Alfonso Lastras → **Estadio Libertad
   Financiera** (Atlético de San Luis).

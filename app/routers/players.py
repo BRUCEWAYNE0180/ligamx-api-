@@ -68,6 +68,40 @@ def season_leaders(
     return out
 
 
+@router.get("/players/xg-performance")
+def xg_performance(
+    season: str = Query(None),
+    order: str = Query("over", description="'over' = más goles que su xG primero; 'under' = al revés"),
+    limit: int = Query(20, ge=1, le=100),
+    min_appearances: int = Query(1, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Rendimiento goles vs xG de la temporada (desde player_match_stats): quién
+    finaliza por encima de lo esperado (clínicos) y quién por debajo. diff = goles − xG."""
+    label = resolve_season_label(db, season)
+    M = models.PlayerMatchStat
+    rows = (
+        db.query(M.player_name, M.team_name, func.count(M.id).label("apps"),
+                 func.sum(M.goals).label("goals"), func.sum(M.xg).label("xg"))
+        .filter(M.season == label)
+        .group_by(M.player_name, M.team_name)
+        .having(func.count(M.id) >= min_appearances)
+        .all()
+    )
+    out = []
+    for name, team, apps, goals, xg in rows:
+        g = int(goals or 0)
+        x = round(float(xg or 0), 2)
+        out.append({
+            "player": name, "team": team, "appearances": apps,
+            "goals": g, "xg": x, "diff": round(g - x, 2),
+        })
+    out.sort(key=lambda r: r["diff"], reverse=(order != "under"))
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return out[:limit]
+
+
 @router.get("/players/search", response_model=list[schemas.PlayerResponse])
 def search_players(
     q: str = Query(None, description="Texto a buscar en el nombre (ignora acentos)"),
