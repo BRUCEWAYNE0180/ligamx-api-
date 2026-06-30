@@ -54,6 +54,7 @@ Fuentes válidas para `source`: `espn` (recomendada), `365scores`, `demo` (datos
 | `RATE_LIMIT_DEFAULT` | Límite global por IP | `200/minute` |
 | `RATE_LIMIT_SYNC` | Límite para `POST /sync` y `/sync/backfill` | `10/minute` |
 | `LOG_LEVEL` | Nivel de logging (`DEBUG`/`INFO`/`WARNING`...) | `INFO` |
+| `REDIS_URL` | Si se define, usa Redis como caché compartido entre workers (si no, caché en proceso) | — |
 
 > El esquema `postgres://` se normaliza automáticamente a `postgresql://`.
 
