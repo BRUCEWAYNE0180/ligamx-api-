@@ -1,0 +1,70 @@
+# Estado del proyecto — Liga MX API
+
+> Documento único de estado. Reemplaza a los antiguos `handoff_1..5.md`
+> (estaban desactualizados: mencionaban Playwright/Flashscore y SofaScore como
+> "funcionando", cosas que ya no aplican). Para el catálogo de endpoints y la
+> guía de uso, ver el `README.md`.
+
+## Stack
+- Python 3.11 · FastAPI + Uvicorn · SQLAlchemy 2.x · Pydantic v2
+- SQLite en local / PostgreSQL en Render
+- Migraciones con **Alembic** (`alembic upgrade head` corre en el arranque de Render y antes del sync)
+- APScheduler opcional (`RUN_SCHEDULER`), normalmente apagado: el sync lo dispara GitHub Actions
+
+## Fuentes de datos (vigentes)
+| Fuente | Uso | Estado |
+|--------|-----|--------|
+| **ESPN** | Equipos, jugadores, estadios, partidos, tabla, stats, eventos, alineaciones | ✅ Principal |
+| **365Scores** | Fixtures en vivo, tabla, alineaciones, eventos, ficha (sede/árbitro) | ✅ No bloqueado |
+| **TheSportsDB** | Fundación, capacidad de estadios, escudos, highlights, calendario | ✅ Enriquecimiento |
+| **RSS (Google News / ESPN)** | Noticias en español (`feedparser`) | ✅ |
+| **SofaScore** | Detalle de partidos (best-effort) | ⚠️ Bloqueado por Cloudflare desde el server |
+
+> Nota: la antigua dependencia de **Playwright/Chromium** para noticias de
+> Flashscore fue eliminada; ahora las noticias salen de RSS.
+
+## Arquitectura del sync (FETCH → WRITE → ENRICH)
+1. **FETCH**: descarga todo a memoria. Si una fuente crítica falla, **aborta sin tocar la BD**.
+2. **WRITE**: borrado + inserción en una sola transacción (rollback ante error).
+3. **ENRICH** (aislado, no crítico): assets de TheSportsDB, stats avanzados,
+   IDs de SofaScore, eventos/alineaciones por partido y noticias.
+
+Una red de seguridad (`_validate_season`) aborta el sync si el torneo/año
+detectado en los datos no coincide con el esperado.
+
+## Variables de entorno
+- `DATABASE_URL` — SQLite local o PostgreSQL en prod (`postgres://` se normaliza)
+- `SYNC_API_KEY` — clave para `POST /sync`
+- `RUN_SCHEDULER` — `true`/`false`
+- `EXPECTED_SEASON_YEAR` / `EXPECTED_TOURNAMENT` — fuerzan la validación de temporada (casos borde)
+
+## Roadmap pendiente
+
+### Seguridad (prioridad alta)
+- [ ] Rotar `SYNC_API_KEY` en Render (no usar valores de prueba en producción).
+- [ ] Validar que el sync de GitHub Actions apunte al `DATABASE_URL` correcto.
+
+### Datos completos (el objetivo "todo por jugador")
+- [ ] **Estadísticas por jugador completas** (minutos, tiros, pases, rating…)
+      desde 365Scores/SofaScore. Hoy `PlayerStat` solo cubre a quien marca gol o
+      recibe tarjeta vía `keyEvents` de ESPN.
+- [ ] Persistir **árbitros** (365Scores ya los expone en `/matches/{id}/info`).
+- [ ] Lesionados/suspendidos y disponibilidad por jornada.
+- [ ] Liguilla/Play-In real (bracket ida/vuelta), no solo la foto de la tabla.
+- [ ] Histórico multi-temporada consultable por endpoint.
+
+### Plataforma
+- [ ] Redis para caché compartido entre workers + rate limiting.
+- [ ] Streaming en vivo (SSE/WebSocket) en lugar de polling.
+- [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
+
+## Hecho recientemente
+- Migración a Pydantic v2 (`ConfigDict`).
+- Limpieza de scrapers muertos (`top_scorers_scraper`, `player_stats_scraper`,
+  `sync_player_stats`) y del shim `fetch_flashscore_news`.
+- Soporte de **Clausura** en el scraper de ESPN (antes solo bajaba Apertura).
+- `Match.stadium_id` ahora se puebla y la sede se expone en `/matches/{id}/full`.
+- Las rutas `/matches/{id}/stats|lineups|events|cards` usan el **id interno**
+  del partido (antes mezclaban el id externo de ESPN).
+- `MatchStat` guarda métricas extra (offsides, atajadas, pases, tackles, etc.).
+- Eliminada la tabla muerta `weeks` (se usa `week_number`).

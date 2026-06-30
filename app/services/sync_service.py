@@ -266,7 +266,6 @@ def run_sync(db, source: str = "espn"):
             models.Standing,
             models.Match,
             models.Player,
-            models.Week,
             models.Team,
             models.Stadium,
             models.Season,
@@ -283,6 +282,7 @@ def run_sync(db, source: str = "espn"):
 
         # Equipos
         tmap = {}
+        team_stadium = {}  # team_id -> stadium_id (para enlazar la sede de cada partido)
         team_count = 0
         for t in raw_teams:
             tm = models.Team(
@@ -299,6 +299,7 @@ def run_sync(db, source: str = "espn"):
             db.flush()
             tmap[t["name"]] = tm.id
             tmap[t["id"]] = tm.id
+            team_stadium[tm.id] = tm.stadium_id
             team_count += 1
 
         # Jugadores
@@ -332,6 +333,7 @@ def run_sync(db, source: str = "espn"):
                     season_id=sn.id,
                     home_team_id=hid,
                     away_team_id=aid,
+                    stadium_id=team_stadium.get(hid),
                     match_date=m.get("match_date"),
                     home_score=m.get("home_score"),
                     away_score=m.get("away_score"),

@@ -79,8 +79,3 @@ def fetch_news(limit: int = 50) -> List[Dict]:
     # Mas recientes primero (los que no traen fecha van al final)
     news.sort(key=lambda n: n["published_at"] or datetime.min, reverse=True)
     return news[:limit]
-
-
-# Compatibilidad con codigo previo
-def fetch_flashscore_news(limit: int = 20) -> List[Dict]:
-    return fetch_news(limit)

@@ -101,10 +101,10 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/{id}/squad` — **alineaciones guardadas** (titulares/suplentes, posición, dorsal) 🆕
 - `GET /matches/{id}/full` — **TODO el partido en una respuesta** (marcador, eventos, alineaciones, stats) 🆕
 - `GET /matches/{id}/live` — **marcador EN VIVO** (goles, reloj, periodo, estado) 🆕
-- `GET /matches/{event_id}/stats` — estadísticas del partido (ESPN)
-- `GET /matches/{event_id}/lineups` — alineaciones (ESPN)
-- `GET /matches/{event_id}/events` — eventos clave (goles/tarjetas/cambios)
-- `GET /matches/{event_id}/cards` — solo tarjetas
+- `GET /matches/{id}/stats` — estadísticas del partido (ESPN)
+- `GET /matches/{id}/lineups` — alineaciones (ESPN)
+- `GET /matches/{id}/events` — eventos clave (goles/tarjetas/cambios)
+- `GET /matches/{id}/cards` — solo tarjetas
 - `GET /matches/live` — partidos en vivo (hoy)
 - `GET /matches/today?date=YYYY-MM-DD` — partidos de un día
 - `GET /h2h/{team1}/{team2}` — historial entre dos equipos

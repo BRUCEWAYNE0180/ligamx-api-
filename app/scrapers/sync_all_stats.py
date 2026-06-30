@@ -13,10 +13,11 @@ def sync_all_stats(db, matches, scraper, tmap, season=None):
 
     def num(v):
         if v is None: return None
-        try: return int(v)
-        except:
-            try: return float(v)
-            except: return None
+        s = str(v).replace("%", "").replace(",", "").strip()
+        try: return int(s)
+        except ValueError:
+            try: return float(s)
+            except ValueError: return None
 
     def add_player(ath, tname, tid, field, eid):
         if not ath: return
@@ -43,7 +44,17 @@ def sync_all_stats(db, matches, scraper, tmap, season=None):
         for team in data.get("boxscore", {}).get("teams", []):
             tname = team.get("team", {}).get("displayName")
             ts = {s.get("name"): s.get("displayValue") for s in team.get("statistics", [])}
-            ms.append(models.MatchStat(team_id=tmap.get(tname), team_name=tname, event_id=str(eid), season=season, possession=num(ts.get("possessionPct")), shots=num(ts.get("totalShots")), shots_on_target=num(ts.get("shotsOnTarget")), corners=num(ts.get("wonCorners")), fouls=num(ts.get("foulsCommitted")), yellow_cards=num(ts.get("yellowCards")), red_cards=num(ts.get("redCards"))))
+            ms.append(models.MatchStat(
+                team_id=tmap.get(tname), team_name=tname, event_id=str(eid), season=season,
+                possession=num(ts.get("possessionPct")), shots=num(ts.get("totalShots")),
+                shots_on_target=num(ts.get("shotsOnTarget")), corners=num(ts.get("wonCorners")),
+                fouls=num(ts.get("foulsCommitted")), yellow_cards=num(ts.get("yellowCards")),
+                red_cards=num(ts.get("redCards")), offsides=num(ts.get("offsides")),
+                saves=num(ts.get("saves")), passes=num(ts.get("accuratePasses")),
+                total_passes=num(ts.get("totalPasses")), tackles=num(ts.get("effectiveTackles")),
+                interceptions=num(ts.get("interceptions")), blocked_shots=num(ts.get("blockedShots")),
+                crosses=num(ts.get("accurateCrosses")), long_balls=num(ts.get("accurateLongBalls")),
+            ))
         for ev in data.get("keyEvents", []):
             etype = ev.get("type", {}).get("text", "")
             tname = ev.get("team", {}).get("displayName")

@@ -42,22 +42,11 @@ class Season(Base):
     matches = relationship("Match", back_populates="season")
     standings = relationship("Standing", back_populates="season")
 
-class Week(Base):
-    __tablename__ = "weeks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    season_id = Column(Integer, ForeignKey("seasons.id"))
-    week_number = Column(Integer)
-    name = Column(String)
-    
-    matches = relationship("Match", back_populates="week")
-
 class Match(Base):
     __tablename__ = "matches"
     
     id = Column(Integer, primary_key=True, index=True)
     season_id = Column(Integer, ForeignKey("seasons.id"))
-    week_id = Column(Integer, ForeignKey("weeks.id"), nullable=True)
     week_number = Column(Integer, nullable=True)
     home_team_id = Column(Integer, ForeignKey("teams.id"))
     away_team_id = Column(Integer, ForeignKey("teams.id"))
@@ -70,7 +59,7 @@ class Match(Base):
     external_event_id = Column(String, nullable=True, index=True)  # id del partido en la fuente (ESPN/365)
     
     season = relationship("Season", back_populates="matches")
-    week = relationship("Week", back_populates="matches")
+    stadium = relationship("Stadium")
     home_team = relationship("Team", foreign_keys=[home_team_id], back_populates="home_matches")
     away_team = relationship("Team", foreign_keys=[away_team_id], back_populates="away_matches")
     match_events = relationship("MatchEvent", back_populates="match", cascade="all, delete-orphan")
@@ -160,6 +149,15 @@ class MatchStat(Base):
     fouls = Column(Integer, nullable=True)
     yellow_cards = Column(Integer, nullable=True)
     red_cards = Column(Integer, nullable=True)
+    offsides = Column(Integer, nullable=True)
+    saves = Column(Integer, nullable=True)
+    passes = Column(Integer, nullable=True)
+    total_passes = Column(Integer, nullable=True)
+    tackles = Column(Integer, nullable=True)
+    interceptions = Column(Integer, nullable=True)
+    blocked_shots = Column(Integer, nullable=True)
+    crosses = Column(Integer, nullable=True)
+    long_balls = Column(Integer, nullable=True)
     team = relationship("Team")
 
 class PlayerStat(Base):

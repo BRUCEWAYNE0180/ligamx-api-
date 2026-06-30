@@ -100,7 +100,17 @@ class ESPNRequestsScraper(BaseScraper):
             try: return int(v)
             except (ValueError, TypeError): return None
         year = season_id or datetime.now().year
-        ranges=[(f"{year}0701",f"{year}0731"),(f"{year}0801",f"{year}0831"),(f"{year}0901",f"{year}0930"),(f"{year}1001",f"{year}1031"),(f"{year}1101",f"{year}1130"),(f"{year}1201",f"{year}1231")]
+        # Liga MX juega DOS torneos por ano: Clausura (ene-jun) y Apertura (jul-dic).
+        # Antes solo se bajaban los meses jul-dic, por lo que el Clausura nunca se
+        # cargaba. Ahora elegimos la ventana de meses segun el torneo vigente.
+        from app.season import current_tournament
+        tournament, _ = current_tournament()
+        months = [1, 2, 3, 4, 5, 6] if tournament == "Clausura" else [7, 8, 9, 10, 11, 12]
+        ranges = []
+        for mm in months:
+            start = f"{year}{mm:02d}01"
+            end = f"{year}1231" if mm == 12 else f"{year}{mm + 1:02d}01"
+            ranges.append((start, end))
         for start, end in ranges:
             url=f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard?region=mx&lang=es&dates={start}-{end}"
             try:
@@ -123,37 +133,6 @@ class ESPNRequestsScraper(BaseScraper):
                 matches[eid]={"event_id": eid, "home_team_id":int(home.get("team", {}).get("id")) if home.get("team", {}).get("id") else None, "away_team_id":int(away.get("team", {}).get("id")) if away.get("team", {}).get("id") else None, "home_team":hn, "away_team":an, "home_score":ps(home.get("score")), "away_score":ps(away.get("score")), "match_date":md, "status":status, "week":ev.get("week", {}).get("number")}
             time.sleep(0.15)
         return list(matches.values())
-
-    def get_top_scorers(self, season_name=None) -> List[Dict]:
-        from app.season import current_season_year
-        season_name = season_name or current_season_year()
-        matches = self.get_matches()
-        scorers = {}
-        for match in matches:
-            eid = match.get("event_id")
-            if not eid or match.get("status") != "finished":
-                continue
-            try:
-                data = self._get_json(f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={eid}")
-            except Exception as e:
-                print(f"⚠️ summary {eid}: {e}")
-                continue
-            for event in data.get("keyEvents", []):
-                if not event.get("scoringPlay"):
-                    continue
-                participants = event.get("participants", [])
-                if not participants:
-                    continue
-                scorer = participants[0].get("athlete", {})
-                team_name = event.get("team", {}).get("displayName") or match.get("home_team") or match.get("away_team")
-                key = (scorer.get("displayName"), team_name)
-                scorers.setdefault(key, {"player": scorer.get("displayName"), "team": team_name, "goals": 0})
-                scorers[key]["goals"] += 1
-            time.sleep(0.15)
-        result = sorted(scorers.values(), key=lambda x: x["goals"], reverse=True)
-        for r in result:
-            r.update({"matches": None, "assists": None, "penalties": None, "season": season_name})
-        return result
 
     def get_live_matches(self) -> List[Dict]:
         today = datetime.now().strftime("%Y%m%d")
@@ -229,11 +208,12 @@ class ESPNRequestsScraper(BaseScraper):
                 v = team_stats.get(key)
                 if v is None:
                     return default
+                s = str(v).replace("%", "").replace(",", "").strip()
                 try:
-                    return int(v)
+                    return int(s)
                 except ValueError:
                     try:
-                        return float(v)
+                        return float(s)
                     except ValueError:
                         return default
             stats.append({
