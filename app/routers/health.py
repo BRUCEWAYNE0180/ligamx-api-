@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
 from app.season import current_tournament, current_season_name
+from app.metrics import metrics
+from app.cache import cache_stats
 
 router = APIRouter()
 
@@ -14,6 +16,15 @@ def read_root():
 @router.get("/health")
 def health_check():
     return {"status": "ok", "timestamp": datetime.now()}
+
+
+@router.get("/metrics", tags=["meta"])
+def metrics_endpoint():
+    """Metricas de observabilidad en proceso: uptime, total de requests, desglose
+    por codigo (2xx/4xx/5xx), latencias, rutas mas usadas y estado del cache."""
+    snap = metrics.snapshot()
+    snap["cache"] = cache_stats()
+    return snap
 
 @router.get("/season")
 def season_info(db: Session = Depends(get_db)):

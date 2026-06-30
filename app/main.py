@@ -4,6 +4,8 @@ load_dotenv()
 import os
 import re
 import sys
+import time
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,7 +17,16 @@ import subprocess
 from app.database import engine, Base
 from app import models
 from app.rate_limit import limiter
+from app.metrics import metrics
 from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search, live
+
+# Logging estructurado basico (timestamp, nivel, logger). En produccion se puede
+# enviar a un colector; aqui dejamos un formato consistente para todos los logs.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+access_logger = logging.getLogger("ligamx.access")
 
 # En desarrollo (SQLite) creamos las tablas automaticamente para arrancar sin
 # pasos extra. En produccion (PostgreSQL) el esquema lo gestiona Alembic
@@ -47,6 +58,25 @@ app = FastAPI(title="Liga MX API", version="1.0", generate_unique_id_function=_u
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+
+@app.middleware("http")
+async def observability(request, call_next):
+    """Mide latencia, registra cada request (metodo, ruta, status, ms) y alimenta
+    las metricas en proceso. La ruta se normaliza a su plantilla (p. ej.
+    /matches/{match_id}) para no explotar la cardinalidad."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    try:
+        metrics.record(path, response.status_code, duration_ms)
+    except Exception:
+        pass
+    access_logger.info(f"{request.method} {path} {response.status_code} {duration_ms:.1f}ms")
+    return response
 
 
 @app.middleware("http")

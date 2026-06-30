@@ -82,6 +82,8 @@ detectado en los datos no coincide con el esperado.
       constante y `503` si falta `SYNC_API_KEY`; cabeceras `X-Content-Type-Options`,
       `X-Frame-Options`, `Referrer-Policy`.
 - [ ] Redis para caché compartido entre workers.
+- [x] **Observabilidad**: logging de acceso (método, ruta, status, ms) y métricas
+      en proceso en `GET /metrics` (uptime, requests por código, latencias, top rutas, caché).
 - [x] **Versionado de API**: todas las rutas existen en la raíz (`/...`, legado) y
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 

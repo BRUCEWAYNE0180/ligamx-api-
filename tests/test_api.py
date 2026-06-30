@@ -468,3 +468,31 @@ def test_v1_mirrors_root(client, seeded):
     assert len(v1) == 2
     # un endpoint mas para asegurar el espejo
     assert client.get("/v1/seasons").status_code == 200
+
+
+
+# ---------- Observabilidad: métricas ----------
+
+def test_metrics_endpoint(client, seeded):
+    # generamos algo de trafico
+    client.get("/health")
+    client.get("/standings")
+    client.get("/matches/1/full")
+    m = client.get("/metrics").json()
+    assert m["requests"]["total"] >= 3
+    assert "2xx" in m["requests"]["by_class"]
+    assert "uptime_seconds" in m
+    assert "avg" in m["latency_ms"]
+    assert "cache" in m
+    # las rutas se normalizan a su plantilla, no IDs concretos
+    paths = {p["path"] for p in m["top_paths"]}
+    assert any("{match_id}" in p for p in paths) or "/standings" in paths
+
+
+def test_metrics_cuenta_errores(client):
+    from app.metrics import metrics
+    before = metrics.snapshot()["requests"]["total"]
+    client.get("/matches/999999")  # 404
+    after = metrics.snapshot()
+    assert after["requests"]["total"] > before
+    assert after["requests"]["by_class"].get("4xx", 0) >= 1
