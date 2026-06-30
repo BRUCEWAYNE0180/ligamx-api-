@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 import unicodedata
 from app.database import get_db
-from app.dependencies import get_or_404, resolve_season_label
+from app.dependencies import get_or_404, resolve_season_label, resolve_season_id, discipline_summary
 from app import models, schemas
 
 router = APIRouter()
@@ -100,6 +100,49 @@ def xg_performance(
     for i, r in enumerate(out):
         r["rank"] = i + 1
     return out[:limit]
+
+
+@router.get("/players/discipline")
+def players_discipline(
+    season: str = Query(None),
+    order: str = Query("discipline_points", description="discipline_points|yellow_cards|red_cards"),
+    limit: int = Query(20, ge=1, le=100),
+    at_risk: bool = Query(False, description="solo jugadores a una amarilla de suspension"),
+    db: Session = Depends(get_db),
+):
+    """Tabla de disciplina por jugador de la temporada: tarjetas amarillas y rojas
+    acumuladas (desde los eventos de cada partido). Marca quien esta en riesgo de
+    suspension por acumulacion de amarillas (regla Liga MX: 5 amarillas = 1 partido)."""
+    label = resolve_season_label(db, season)
+    season_id = resolve_season_id(db, season)
+    if season_id is None:
+        return {"season": label, "count": 0, "players": []}
+    E, M = models.MatchEvent, models.Match
+    rows = (
+        db.query(
+            E.player_name, E.team_id, E.team_name,
+            func.sum(case((E.event_type == "yellow_card", 1), else_=0)).label("yellow"),
+            func.sum(case((E.event_type == "red_card", 1), else_=0)).label("red"),
+        )
+        .join(M, E.match_id == M.id)
+        .filter(M.season_id == season_id)
+        .filter(E.event_type.in_(["yellow_card", "red_card"]))
+        .filter(E.player_name.isnot(None))
+        .group_by(E.player_name, E.team_id, E.team_name)
+        .all()
+    )
+    out = []
+    for name, team_id, team_name, yellow, red in rows:
+        d = discipline_summary(yellow, red)
+        d.update({"player": name, "team_id": team_id, "team": team_name})
+        out.append(d)
+    if at_risk:
+        out = [r for r in out if r["suspension_risk"]]
+    key = order if order in ("yellow_cards", "red_cards", "discipline_points") else "discipline_points"
+    out.sort(key=lambda r: r[key], reverse=True)
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return {"season": label, "count": len(out), "players": out[:limit]}
 
 
 @router.get("/players/search", response_model=list[schemas.PlayerResponse])
@@ -200,6 +243,38 @@ def get_player_season_stats(player_id: int, season: str = Query(None), db: Sessi
         "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
     }
 
+
+
+@router.get("/players/{player_id}/discipline")
+def get_player_discipline(player_id: int, season: str = Query(None), db: Session = Depends(get_db)):
+    """Tarjetas acumuladas de un jugador en la temporada y su estado de suspension
+    (regla Liga MX: 5 amarillas = 1 partido)."""
+    player = get_or_404(db, models.Player, player_id)
+    label = resolve_season_label(db, season)
+    season_id = resolve_season_id(db, season)
+    nq = _norm(player.name)
+    yellow = red = 0
+    if season_id is not None:
+        E, M = models.MatchEvent, models.Match
+        events = (
+            db.query(E.event_type, E.player_name)
+            .join(M, E.match_id == M.id)
+            .filter(M.season_id == season_id)
+            .filter(E.event_type.in_(["yellow_card", "red_card"]))
+            .filter(E.player_name.isnot(None))
+            .all()
+        )
+        for etype, pname in events:
+            if _norm(pname or "") != nq:
+                continue
+            if etype == "yellow_card":
+                yellow += 1
+            elif etype == "red_card":
+                red += 1
+    d = discipline_summary(yellow, red)
+    d.update({"player_id": player_id, "player": player.name,
+              "team_id": player.team_id, "season": label})
+    return d
 
 
 @router.get("/players/{player_id}/profile")

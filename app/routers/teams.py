@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, case
 from datetime import datetime
 import re
 import unicodedata
 from app.database import get_db
-from app.dependencies import get_or_404, resolve_season_label, resolve_season_id
+from app.dependencies import get_or_404, resolve_season_label, resolve_season_id, discipline_summary
 from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
 from app.cache import cached
 from app import models, schemas
@@ -150,6 +150,50 @@ def get_team_form(team_id: int, limit: int = Query(5, ge=1, le=20), db: Session 
         "matches": results,
     }
 
+
+
+@router.get("/teams/{team_id}/discipline")
+def get_team_discipline(team_id: int, season: str = Query(None), db: Session = Depends(get_db)):
+    """Disciplina del equipo en la temporada: totales de tarjetas y desglose por
+    jugador, destacando a los que estan en riesgo de suspension por acumulacion."""
+    get_or_404(db, models.Team, team_id)
+    label = resolve_season_label(db, season)
+    season_id = resolve_season_id(db, season)
+    players = []
+    total_yellow = total_red = 0
+    if season_id is not None:
+        E, M = models.MatchEvent, models.Match
+        rows = (
+            db.query(
+                E.player_name,
+                func.sum(case((E.event_type == "yellow_card", 1), else_=0)).label("yellow"),
+                func.sum(case((E.event_type == "red_card", 1), else_=0)).label("red"),
+            )
+            .join(M, E.match_id == M.id)
+            .filter(M.season_id == season_id, E.team_id == team_id)
+            .filter(E.event_type.in_(["yellow_card", "red_card"]))
+            .filter(E.player_name.isnot(None))
+            .group_by(E.player_name)
+            .all()
+        )
+        for name, yellow, red in rows:
+            d = discipline_summary(yellow, red)
+            d["player"] = name
+            total_yellow += d["yellow_cards"]
+            total_red += d["red_cards"]
+            players.append(d)
+        players.sort(key=lambda p: p["discipline_points"], reverse=True)
+    return {
+        "team_id": team_id,
+        "season": label,
+        "totals": {
+            "yellow_cards": total_yellow,
+            "red_cards": total_red,
+            "discipline_points": total_yellow + total_red * 2,
+        },
+        "at_risk": [p for p in players if p["suspension_risk"]],
+        "players": players,
+    }
 
 
 @router.get("/teams/{team_id}/profile")
