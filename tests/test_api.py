@@ -832,3 +832,49 @@ def test_team_discipline(client, seeded, db):
     # equipo 2 (Chivas) tiene la amarilla de Rival X
     r2 = client.get("/teams/2/discipline").json()
     assert r2["totals"]["yellow_cards"] == 1
+
+
+
+# ---------- Rachas y proyección ----------
+
+def test_player_form(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/10/form").json()
+    assert r["player"] == "Henry Martín"
+    assert r["matches_considered"] == 1
+    assert r["goals"] == 2
+    assert r["avg_rating"] == 8.5
+    assert r["scoring_streak"] == 1  # marcó en su último partido
+
+
+def test_team_streak(client, seeded):
+    # fixture: América (1) ganó 2-1 -> racha de victoria e invicto = 1, anotando = 1
+    r = client.get("/teams/1/streak").json()
+    assert r["team_id"] == 1
+    assert r["matches_played"] == 1
+    assert r["recent_form"] == "W"
+    s = r["streaks"]
+    assert s["wins"] == 1 and s["unbeaten"] == 1 and s["scoring"] == 1
+    assert s["winless"] == 0 and s["clean_sheets"] == 0  # recibió 1 gol
+
+
+def test_standings_projection(client, seeded, db):
+    from datetime import datetime
+    from app import models
+    # sin partidos restantes: la proyección iguala los puntos actuales
+    r = client.get("/standings/projection").json()
+    assert r["season"] == "Apertura 2026"
+    rows = {row["team_id"]: row for row in r["projected_standings"]}
+    assert rows[1]["projected_points"] == rows[1]["current_points"]
+    assert rows[1]["remaining_matches"] == 0
+    # añadimos un partido programado -> ambos equipos suman puntos esperados
+    db.add(models.Match(id=2, season_id=1, home_team_id=1, away_team_id=2,
+                        status="scheduled", match_date=datetime(2026, 8, 1), week_number=2))
+    db.commit()
+    r2 = client.get("/standings/projection").json()
+    rows2 = {row["team_id"]: row for row in r2["projected_standings"]}
+    assert rows2[1]["remaining_matches"] == 1
+    assert rows2[1]["projected_points"] > rows2[1]["current_points"]
+    # ordenado por puntos proyectados desc
+    pts = [row["projected_points"] for row in r2["projected_standings"]]
+    assert pts == sorted(pts, reverse=True)

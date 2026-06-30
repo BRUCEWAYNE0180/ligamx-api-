@@ -277,6 +277,38 @@ def get_player_discipline(player_id: int, season: str = Query(None), db: Session
     return d
 
 
+@router.get("/players/{player_id}/form")
+def get_player_form(player_id: int, last: int = Query(5, ge=1, le=20),
+                    season: str = Query(None), db: Session = Depends(get_db)):
+    """Forma reciente del jugador: ultimos N partidos con rating/goles/asistencias,
+    rating promedio reciente, totales y racha de goleo (partidos seguidos marcando)."""
+    player = get_or_404(db, models.Player, player_id)
+    label = resolve_season_label(db, season)
+    rows = _player_match_rows(db, player.name, label)
+    recent = sorted(rows, key=lambda r: (r.match_id is None, r.match_id), reverse=True)[:last]
+    ratings = [r.rating for r in recent if r.rating is not None]
+    scoring_streak = 0
+    for r in recent:
+        if (r.goals or 0) > 0:
+            scoring_streak += 1
+        else:
+            break
+    return {
+        "player_id": player_id,
+        "player": player.name,
+        "season": label,
+        "matches_considered": len(recent),
+        "goals": sum(r.goals or 0 for r in recent),
+        "assists": sum(r.assists or 0 for r in recent),
+        "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
+        "scoring_streak": scoring_streak,
+        "matches": [
+            {"match_id": r.match_id, "minutes": r.minutes, "goals": r.goals,
+             "assists": r.assists, "rating": r.rating} for r in recent
+        ],
+    }
+
+
 @router.get("/players/{player_id}/profile")
 def get_player_profile(player_id: int, season: str = Query(None), db: Session = Depends(get_db)):
     """Perfil completo del jugador en una llamada: ficha, agregado de la temporada

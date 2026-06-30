@@ -1,11 +1,21 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+import math
 from app.database import get_db
 from app.dependencies import resolve_season_id, resolve_season_label, latest_season, _apertura_first
 from app import models, schemas
 
 router = APIRouter()
+
+# Mismos factores que el predictor de /predict (modelo de Poisson)
+_HOME_ADVANTAGE = 1.20
+_AWAY_FACTOR = 0.85
+_MAX_GOALS = 8
+
+
+def _poisson_pmf(k: int, lam: float) -> float:
+    return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
 
 @router.get("/seasons")
@@ -32,6 +42,85 @@ def get_standings(season: str = Query(None, description="Etiqueta ('Apertura 202
     if season_id is not None:
         q = q.filter(models.Standing.season_id == season_id)
     return q.order_by(models.Standing.position).all()
+
+@router.get("/standings/projection")
+def standings_projection(season: str = Query(None), db: Session = Depends(get_db)):
+    """Proyeccion de la tabla FINAL: a los puntos actuales de cada equipo se le
+    suman los puntos esperados de sus partidos restantes (programados), estimados
+    con un modelo de Poisson (fuerzas de ataque/defensa vs media de liga + ventaja
+    de local). Util para anticipar quien terminara en zona de Liguilla."""
+    season_id = resolve_season_id(db, season)
+    label = resolve_season_label(db, season)
+    if season_id is None:
+        raise HTTPException(status_code=404, detail="No hay temporadas cargadas")
+
+    standings = (db.query(models.Standing).options(joinedload(models.Standing.team))
+                 .filter(models.Standing.season_id == season_id).all())
+    played = [s for s in standings if s.played and s.played > 0]
+    if len(played) < 2:
+        raise HTTPException(status_code=400, detail="No hay suficientes partidos jugados para proyectar")
+
+    avg_gf = sum(s.goals_for / s.played for s in played) / len(played)
+    if avg_gf <= 0:
+        raise HTTPException(status_code=400, detail="Datos insuficientes (promedio de goles nulo)")
+
+    by_team = {s.team_id: s for s in standings}
+
+    def atk(s):
+        return (s.goals_for / s.played) / avg_gf if s.played else 1.0
+
+    def dfn(s):
+        return (s.goals_against / s.played) / avg_gf if s.played else 1.0
+
+    proj = {s.team_id: {"team": s.team, "current_points": s.points, "current_position": s.position,
+                        "projected_points": float(s.points), "remaining_matches": 0} for s in standings}
+
+    remaining = (db.query(models.Match)
+                 .filter(models.Match.season_id == season_id, models.Match.status != "finished")
+                 .all())
+    for m in remaining:
+        sh, sa = by_team.get(m.home_team_id), by_team.get(m.away_team_id)
+        if not sh or not sa or not sh.played or not sa.played:
+            continue
+        exp_h = max(0.05, atk(sh) * dfn(sa) * avg_gf * _HOME_ADVANTAGE)
+        exp_a = max(0.05, atk(sa) * dfn(sh) * avg_gf * _AWAY_FACTOR)
+        ph = [_poisson_pmf(i, exp_h) for i in range(_MAX_GOALS + 1)]
+        pa = [_poisson_pmf(j, exp_a) for j in range(_MAX_GOALS + 1)]
+        hw = dw = aw = 0.0
+        for i in range(_MAX_GOALS + 1):
+            for j in range(_MAX_GOALS + 1):
+                p = ph[i] * pa[j]
+                if i > j:
+                    hw += p
+                elif i == j:
+                    dw += p
+                else:
+                    aw += p
+        proj[m.home_team_id]["projected_points"] += 3 * hw + dw
+        proj[m.away_team_id]["projected_points"] += 3 * aw + dw
+        proj[m.home_team_id]["remaining_matches"] += 1
+        proj[m.away_team_id]["remaining_matches"] += 1
+
+    out = []
+    for v in proj.values():
+        out.append({
+            "team_id": v["team"].id if v["team"] else None,
+            "team": v["team"].name if v["team"] else None,
+            "logo_url": v["team"].logo_url if v["team"] else None,
+            "current_points": v["current_points"],
+            "current_position": v["current_position"],
+            "remaining_matches": v["remaining_matches"],
+            "projected_points": round(v["projected_points"], 1),
+        })
+    out.sort(key=lambda r: r["projected_points"], reverse=True)
+    for i, r in enumerate(out):
+        r["projected_position"] = i + 1
+    return {
+        "season": label,
+        "model": "Poisson sobre partidos restantes (ataque/defensa vs media de liga + ventaja de local)",
+        "projected_standings": out,
+    }
+
 
 @router.get("/top-scorers", response_model=list[schemas.TopScorerResponse])
 def get_top_scorers(db: Session = Depends(get_db), limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), season: str = Query(None)):
