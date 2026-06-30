@@ -170,6 +170,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /players/{id}/match-stats?season=` — **historial partido a partido** con stats completas 🆕
 - `GET /players/{id}/season-stats?season=` — **resumen agregado de la temporada** (minutos, goles, asistencias, xG, xA, rating promedio) 🆕
 - `GET /players/season-leaders?stat=&season=&min_appearances=` — **tabla de líderes desde la BD** (goals, assists, minutes, xg, xa, rating...) 🆕
+- `GET /players/leaderboard?metric=&season=&order=&limit=` — **tabla de líderes UNIFICADA**: una sola entrada para cualquier métrica de rendimiento (goals, assists, minutes, shots, xg, xa, rating...) o de disciplina (yellow_cards, red_cards) 🆕
 - `GET /players/xg-performance?season=&order=over|under` — **goles vs xG**: quién finaliza por encima/debajo de lo esperado 🆕
 - `GET /players/discipline?season=&order=&at_risk=` — **tabla de disciplina**: tarjetas amarillas/rojas acumuladas por jugador, con riesgo de suspensión (regla Liga MX: 5 amarillas = 1 partido) 🆕
 - `GET /players/{id}/discipline?season=` — **tarjetas acumuladas de un jugador** y su estado de suspensión 🆕

@@ -145,6 +145,65 @@ def players_discipline(
     return {"season": label, "count": len(out), "players": out[:limit]}
 
 
+_CARD_METRICS = {"yellow_cards", "red_cards"}
+
+
+@router.get("/players/leaderboard")
+def players_leaderboard(
+    metric: str = Query("goals", description=(
+        "Rendimiento: goals|assists|minutes|shots|xg|xa|key_passes|interceptions|touches|rating. "
+        "Disciplina: yellow_cards|red_cards")),
+    season: str = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    order: str = Query("desc", description="desc|asc"),
+    min_appearances: int = Query(1, ge=0, description="apariciones minimas (solo metricas de rendimiento)"),
+    db: Session = Depends(get_db),
+):
+    """Tabla de lideres UNIFICADA: una sola entrada para cualquier metrica, ya sea
+    de rendimiento (goles, asistencias, minutos, xG, xA, rating...) o de disciplina
+    (tarjetas). Consolida /players/season-leaders y /players/discipline en un unico
+    endpoint configurable."""
+    label = resolve_season_label(db, season)
+    reverse = order != "asc"
+    out = []
+    if metric in _CARD_METRICS:
+        season_id = resolve_season_id(db, season)
+        if season_id is not None:
+            E, M = models.MatchEvent, models.Match
+            etype = "yellow_card" if metric == "yellow_cards" else "red_card"
+            rows = (
+                db.query(E.player_name, E.team_name, func.count(E.id).label("value"))
+                .join(M, E.match_id == M.id)
+                .filter(M.season_id == season_id, E.event_type == etype)
+                .filter(E.player_name.isnot(None))
+                .group_by(E.player_name, E.team_name)
+                .all()
+            )
+            out = [{"player": n, "team": t, "value": int(v)} for n, t, v in rows]
+    else:
+        if metric not in _LEADER_AGG:
+            metric = "goals"
+        expr, _ = _LEADER_AGG[metric]
+        M = models.PlayerMatchStat
+        rows = (
+            db.query(M.player_name, M.team_name, func.count(M.id).label("apps"), expr.label("value"))
+            .filter(M.season == label)
+            .group_by(M.player_name, M.team_name)
+            .having(func.count(M.id) >= min_appearances)
+            .all()
+        )
+        for name, team, apps, value in rows:
+            if value is None:
+                continue
+            v = round(float(value), 2) if metric in ("xg", "xa", "rating") else int(value)
+            out.append({"player": name, "team": team, "appearances": apps, "value": v})
+    out.sort(key=lambda r: r["value"], reverse=reverse)
+    out = out[:limit]
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return {"season": label, "metric": metric, "order": order, "count": len(out), "players": out}
+
+
 @router.get("/players/search", response_model=list[schemas.PlayerResponse])
 def search_players(
     q: str = Query(None, description="Texto a buscar en el nombre (ignora acentos)"),

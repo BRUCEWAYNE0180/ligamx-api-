@@ -878,3 +878,35 @@ def test_standings_projection(client, seeded, db):
     # ordenado por puntos proyectados desc
     pts = [row["projected_points"] for row in r2["projected_standings"]]
     assert pts == sorted(pts, reverse=True)
+
+
+
+# ---------- Leaderboard unificado ----------
+
+def test_leaderboard_rendimiento(client, seeded, db):
+    _seed_player_match_stats(db)
+    # goles
+    r = client.get("/players/leaderboard", params={"metric": "goals"}).json()
+    assert r["metric"] == "goals"
+    assert r["players"][0]["player"] == "Henry Martín"
+    assert r["players"][0]["value"] == 2 and r["players"][0]["rank"] == 1
+    # rating (promedio) y xg redondeado
+    r2 = client.get("/players/leaderboard", params={"metric": "rating"}).json()
+    assert r2["players"][0]["value"] == 8.5
+    r3 = client.get("/players/leaderboard", params={"metric": "xg"}).json()
+    assert r3["players"][0]["value"] == 1.2
+
+
+def test_leaderboard_disciplina(client, seeded, db):
+    _seed_cards(db)  # 'Tarjetero' (equipo 1) con 4 amarillas
+    r = client.get("/players/leaderboard", params={"metric": "yellow_cards"}).json()
+    assert r["metric"] == "yellow_cards"
+    top = {p["player"]: p for p in r["players"]}
+    assert top["Tarjetero"]["value"] == 4
+    assert r["players"][0]["player"] == "Tarjetero"  # más amarillas primero
+
+
+def test_leaderboard_metrica_invalida_usa_goals(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/leaderboard", params={"metric": "inventada"}).json()
+    assert r["metric"] == "goals"  # cae a goals por defecto
