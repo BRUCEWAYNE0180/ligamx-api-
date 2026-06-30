@@ -557,3 +557,17 @@ def test_365_top_performers(client, monkeypatch):
     r = client.get("/365scores/matches/123/top-performers").json()
     assert r["categories"][0]["category"] == "Delantero"
     assert r["categories"][0]["home"]["name"] == "Morales"
+
+
+
+# ---------- Estadios oficiales 2026 ----------
+
+def test_estadios_oficiales_2026():
+    from app.scrapers.espn_requests_scraper import STADIUMS
+    # Renombres oficiales del Apertura 2026
+    assert STADIUMS[227]["name"] == "Estadio Banorte"          # ex Azteca (América)
+    assert STADIUMS[15720]["name"] == "Estadio Libertad Financiera"  # ex Alfonso Lastras (San Luis)
+    # No quedaron nombres viejos
+    names = {s["name"] for s in STADIUMS.values()}
+    assert "Estadio Azteca" not in names
+    assert "Estadio Alfonso Lastras" not in names
