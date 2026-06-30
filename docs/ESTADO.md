@@ -41,7 +41,9 @@ detectado en los datos no coincide con el esperado.
 ## Roadmap pendiente
 
 ### Seguridad (prioridad alta)
-- [ ] Rotar `SYNC_API_KEY` en Render (no usar valores de prueba en producción).
+- [x] `verify_api_key` endurecida: comparación de tiempo constante + `503` si el
+      servidor no tiene `SYNC_API_KEY`. Rate limiting por IP activo.
+- [ ] **Rotar `SYNC_API_KEY` en Render** (no usar valores de prueba en producción) — acción de operación.
 - [ ] Validar que el sync de GitHub Actions apunte al `DATABASE_URL` correcto.
 
 ### Datos completos (el objetivo "todo por jugador")
@@ -70,7 +72,12 @@ detectado en los datos no coincide con el esperado.
 
 ### Plataforma
 - [x] Búsqueda global (`GET /search?q=`) sobre equipos, jugadores y estadios.
-- [ ] Redis para caché compartido entre workers + rate limiting.
+- [x] **Rate limiting por IP** (slowapi): límite global configurable + límite
+      estricto en `/sync` y `/sync/backfill`. Cabeceras `X-RateLimit-*` y `429`.
+- [x] **Seguridad endurecida**: `verify_api_key` con comparación de tiempo
+      constante y `503` si falta `SYNC_API_KEY`; cabeceras `X-Content-Type-Options`,
+      `X-Frame-Options`, `Referrer-Policy`.
+- [ ] Redis para caché compartido entre workers.
 - [ ] Streaming en vivo (SSE/WebSocket) en lugar de polling.
 - [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
 

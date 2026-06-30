@@ -1,21 +1,25 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import verify_api_key
+from app.rate_limit import limiter, SYNC_LIMIT
 from app.services.sync_service import run_sync_with_log, run_backfill_with_log
 from app import models
 
 router = APIRouter()
 
 @router.post("/sync")
-def sync_data(source: str = "espn", db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
+@limiter.limit(SYNC_LIMIT)
+def sync_data(request: Request, source: str = "espn", db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
     result = run_sync_with_log(db, source)
     return {"message": "Datos sincronizados", "source": source, "result": result}
 
 
 @router.post("/sync/backfill")
+@limiter.limit(SYNC_LIMIT)
 def backfill_season(
+    request: Request,
     year: int = Query(..., ge=2000, le=2100, description="Ano del torneo, p. ej. 2025"),
     tournament: str = Query(..., description="'Apertura' o 'Clausura'"),
     source: str = Query("espn"),

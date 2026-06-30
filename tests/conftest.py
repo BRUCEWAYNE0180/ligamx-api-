@@ -7,6 +7,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///./_pytest.db"
 os.environ["SYNC_API_KEY"] = "test-key"
 os.environ["RUN_SCHEDULER"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "false"  # los tests no deben toparse con el limite por IP
 
 from datetime import datetime  # noqa: E402
 

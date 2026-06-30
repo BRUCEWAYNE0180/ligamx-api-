@@ -383,3 +383,44 @@ def test_search_prefijo_primero(client, seeded, db):
 
 def test_search_requiere_q(client):
     assert client.get("/search").status_code == 422
+
+
+
+# ---------- Seguridad: cabeceras, API key y rate limiting ----------
+
+def test_security_headers(client):
+    r = client.get("/health")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert r.headers.get("Referrer-Policy") == "no-referrer"
+
+
+def test_sync_503_si_no_hay_api_key_configurada(client, monkeypatch):
+    monkeypatch.delenv("SYNC_API_KEY", raising=False)
+    r = client.post("/sync", params={"source": "demo"}, headers={"X-API-Key": "loquesea"})
+    assert r.status_code == 503
+
+
+def test_rate_limit_devuelve_429():
+    # App minima con limite bajo para verificar la integracion de slowapi
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    lim = Limiter(key_func=get_remote_address, default_limits=["2/minute"])
+    app = FastAPI()
+    app.state.limiter = lim
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
+    @app.get("/ping")
+    def ping(request: Request):
+        return {"ok": True}
+
+    c = TestClient(app)
+    assert c.get("/ping").status_code == 200
+    assert c.get("/ping").status_code == 200
+    assert c.get("/ping").status_code == 429  # tercer request supera 2/minute
