@@ -12,7 +12,11 @@ from app.database import engine, Base
 from app import models
 from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras
 
-Base.metadata.create_all(bind=engine)
+# En desarrollo (SQLite) creamos las tablas automaticamente para arrancar sin
+# pasos extra. En produccion (PostgreSQL) el esquema lo gestiona Alembic
+# (`alembic upgrade head`), que SI maneja cambios de columnas/migraciones.
+if engine.dialect.name == "sqlite":
+    Base.metadata.create_all(bind=engine)
 
 scheduler = BackgroundScheduler()
 
@@ -21,7 +25,7 @@ def auto_sync():
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     subprocess.run([python, "sync.py"], cwd=project_root)
 
-if os.getenv("RUN_SCHEDULER", "true").lower() == "true":
+if os.getenv("RUN_SCHEDULER", "false").lower() == "true":
     scheduler.add_job(auto_sync, "interval", hours=6)
     scheduler.start()
 

@@ -9,7 +9,7 @@ Competencia Liga MX = 141.
 """
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 import requests
 
@@ -42,9 +42,12 @@ def _parse_date(value):
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
     except (ValueError, TypeError):
         return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 class Scores365Scraper(BaseScraper):
@@ -199,6 +202,35 @@ class Scores365Scraper(BaseScraper):
     # ---------- Detalle por partido ----------
     def _game_raw(self, game_id) -> Dict:
         return self._get_json("game/", {"gameId": game_id}).get("game", {})
+
+    def get_match_info(self, game_id) -> Dict:
+        """Ficha del partido: sede (estadio), arbitro y cuerpo arbitral,
+        marcador, estado, jornada y temporada. El arbitro (officials) es un
+        dato que ESPN no expone y suele interesar mucho a los aficionados."""
+        game = self._game_raw(game_id)
+        home = game.get("homeCompetitor", {}) or {}
+        away = game.get("awayCompetitor", {}) or {}
+        venue = game.get("venue") or {}
+        officials = [
+            {"name": o.get("name"), "id": o.get("id")}
+            for o in (game.get("officials") or [])
+            if o.get("name")
+        ]
+        referee = officials[0]["name"] if officials else None
+        return {
+            "game_id": game_id,
+            "home_team": home.get("name"),
+            "away_team": away.get("name"),
+            "home_score": home.get("score") if isinstance(home.get("score"), (int, float)) and home.get("score") >= 0 else None,
+            "away_score": away.get("score") if isinstance(away.get("score"), (int, float)) and away.get("score") >= 0 else None,
+            "status": _status_from_group(game),
+            "start_time": game.get("startTime"),
+            "round": game.get("roundNum"),
+            "season_num": game.get("seasonNum"),
+            "venue": venue.get("name"),
+            "referee": referee,
+            "officials": officials,
+        }
 
     def get_match_lineups(self, game_id) -> Dict:
         """Alineaciones con formacion, posiciones en cancha (x/y) y ratings."""

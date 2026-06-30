@@ -1,13 +1,51 @@
 from datetime import datetime, timedelta
 import logging
+import os
 from typing import List, Dict, Any
 from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
 from app.scrapers.sync_all_stats import sync_all_stats
 from app.scrapers.sofascore_scraper import get_events as get_sofascore_events
+from app.scrapers import extras_scraper
+from app.season import current_tournament, tournament_from_matches
 from app import models
 
 logger = logging.getLogger(__name__)
+
+def _validate_season(detected_tournament: str, detected_year: int):
+    """Red de seguridad: verifica que los datos detectados correspondan al
+    torneo/ano esperado ANTES de tocar la BD. Si no coinciden, se aborta el
+    sync para no sobreescribir datos buenos con los de un torneo equivocado.
+
+    El esperado se calcula de la fecha del sistema, pero puede forzarse con
+    variables de entorno (utiles para pruebas o casos borde de calendario):
+      - EXPECTED_SEASON_YEAR (p. ej. "2026")
+      - EXPECTED_TOURNAMENT  (p. ej. "Apertura")
+    """
+    exp_tournament, exp_year = current_tournament()
+    if os.getenv("EXPECTED_SEASON_YEAR"):
+        try:
+            exp_year = int(os.getenv("EXPECTED_SEASON_YEAR"))
+        except ValueError:
+            logger.warning("EXPECTED_SEASON_YEAR no es un entero valido; se ignora")
+    if os.getenv("EXPECTED_TOURNAMENT"):
+        exp_tournament = os.getenv("EXPECTED_TOURNAMENT")
+
+    # El ano es la senal mas fuerte: si no coincide, abortamos.
+    if detected_year != exp_year:
+        raise ValueError(
+            f"Sync abortado: ano detectado en los datos ({detected_tournament} "
+            f"{detected_year}) != esperado ({exp_tournament} {exp_year}). "
+            f"Se conservan los datos previos. Si es intencional, define "
+            f"EXPECTED_SEASON_YEAR={detected_year}."
+        )
+
+    # Diferencia de torneo (mismo ano): solo advertencia (casos borde de calendario).
+    if detected_tournament != exp_tournament:
+        logger.warning(
+            f"Torneo detectado ({detected_tournament}) distinto al esperado "
+            f"({exp_tournament}) para {exp_year}; se continua pero revisa la fuente."
+        )
 
 def calculate_week_numbers(matches: List[Dict[str, Any]]):
     """Asigna numeros de jornada basandose en la fecha.
@@ -73,6 +111,38 @@ def _sync_sofascore_event_ids(db):
     except Exception as e:
         logger.warning(f"SofaScore event ID sync failed: {e}")
 
+def _enrich_team_assets(db):
+    """Enriquece equipos y estadios con datos de TheSportsDB (cruzando por
+    idESPN): ano de fundacion, escudo (si falta) y capacidad del estadio.
+    Fuente complementaria, no critica."""
+    try:
+        assets = extras_scraper.get_team_assets()
+        if not assets:
+            return
+        by_espn = {a["espn_team_id"]: a for a in assets if a.get("espn_team_id")}
+        updated_teams = 0
+        updated_stadiums = 0
+        for team in db.query(models.Team).all():
+            a = by_espn.get(team.id)
+            if not a:
+                continue
+            if a.get("founded") and not team.founded:
+                team.founded = a["founded"]
+            if a.get("badge") and not team.logo_url:
+                team.logo_url = a["badge"]
+            db.add(team)
+            updated_teams += 1
+            if team.stadium and a.get("stadium_capacity") and not team.stadium.capacity:
+                team.stadium.capacity = a["stadium_capacity"]
+                db.add(team.stadium)
+                updated_stadiums += 1
+        db.commit()
+        logger.info(f"TheSportsDB enrich: {updated_teams} equipos, {updated_stadiums} estadios")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Enriquecimiento TheSportsDB fallo (no critico): {e}")
+
+
 def run_sync(db, source: str = "espn"):
     """Ejecuta la sincronizacion completa de datos.
 
@@ -107,23 +177,32 @@ def run_sync(db, source: str = "espn"):
         raise ValueError("Datos insuficientes del scraper; se aborta para no vaciar la BD")
 
     calculate_week_numbers(raw_matches)
-    current_year = datetime.now().year
+    # El torneo/ano se deduce de las fechas REALES de los partidos cargados
+    # (p. ej. partidos jul-dic 2026 => "Apertura 2026"), no del mes actual.
+    tournament, current_year = tournament_from_matches(raw_matches)
+    logger.info(f"Temporada detectada de los datos: {tournament} {current_year}")
+
+    # Red de seguridad: aborta (sin tocar la BD) si no es el torneo/ano esperado.
+    _validate_season(tournament, current_year)
 
     # -------- FASE 2: WRITE (una sola transaccion) --------
     try:
-        # Limpiar tablas core
+        # Limpiar tablas core.
+        # IMPORTANTE: se borran primero las tablas HIJAS (con FK) y luego las
+        # PADRES, para no violar claves foraneas en Postgres. El bulk delete
+        # de SQLAlchemy NO dispara el cascade del ORM, asi que el orden importa.
         for m in [
-            models.Standing,
+            models.MatchEvent,
+            models.MatchLineup,
             models.MatchStat,
             models.PlayerStat,
+            models.Standing,
             models.Match,
             models.Player,
             models.Week,
             models.Team,
             models.Stadium,
             models.Season,
-            models.MatchEvent,
-            models.MatchLineup,
         ]:
             db.query(m).delete()
 
@@ -146,6 +225,7 @@ def run_sync(db, source: str = "espn"):
                 city=t.get("city"),
                 colors=t.get("colors"),
                 founded=t.get("founded"),
+                logo_url=t.get("logo_url"),
                 stadium_id=smap.get(t.get("stadium_name")),
             )
             db.add(tm)
@@ -169,8 +249,8 @@ def run_sync(db, source: str = "espn"):
                 )
             )
 
-        # Temporada
-        sn = models.Season(name=str(current_year), year=current_year, tournament_type="Liga MX")
+        # Temporada (etiquetada por torneo: p. ej. "Apertura 2026")
+        sn = models.Season(name=f"{tournament} {current_year}", year=current_year, tournament_type=tournament)
         db.add(sn)
         db.flush()
 
@@ -218,6 +298,9 @@ def run_sync(db, source: str = "espn"):
         raise
 
     # -------- FASE 3: ENRICH (aislado, no critico) --------
+    # Escudos, fundacion y capacidad via TheSportsDB (cruce por idESPN)
+    _enrich_team_assets(db)
+
     # Stats avanzados
     try:
         sync_all_stats(db, raw_matches, scraper, tmap, str(current_year))

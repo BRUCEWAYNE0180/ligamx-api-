@@ -1,7 +1,22 @@
 import time, requests, re, logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 from app.scrapers.base import BaseScraper
+
+
+def _to_naive_utc(raw_date: str):
+    """Convierte una fecha ISO (con o sin zona) a datetime *naive* en UTC.
+    Unificar todo a UTC naive evita comparar datetimes aware vs naive
+    (que en Python lanza TypeError) y guarda fechas consistentes en la BD."""
+    if not raw_date:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 STADIUMS = {227: {'name': 'Estadio Azteca', 'city': 'Ciudad de México'}, 226: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 216: {'name': 'Estadio Jalisco', 'city': 'Guadalajara'}, 15720: {'name': 'Estadio Alfonso Lastras', 'city': 'San Luis Potosí'}, 218: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 17851: {'name': 'Estadio Olímpico Benito Juárez', 'city': 'Ciudad Juárez'}, 219: {'name': 'Estadio Akron', 'city': 'Zapopan'}, 228: {'name': 'Estadio León', 'city': 'León'}, 220: {'name': 'Estadio BBVA', 'city': 'Guadalupe'}, 229: {'name': 'Estadio Victoria', 'city': 'Aguascalientes'}, 234: {'name': 'Estadio Hidalgo', 'city': 'Pachuca'}, 231: {'name': 'Estadio Cuauhtémoc', 'city': 'Puebla'}, 233: {'name': 'Estadio Olímpico Universitario', 'city': 'Ciudad de México'}, 222: {'name': 'Estadio Corregidora', 'city': 'Querétaro'}, 225: {'name': 'Estadio Corona', 'city': 'Torreón'}, 232: {'name': 'Estadio Universitario', 'city': 'San Nicolás de los Garza'}, 10125: {'name': 'Estadio Caliente', 'city': 'Tijuana'}, 223: {'name': 'Estadio Nemesio Díez', 'city': 'Toluca'}}
 
 logger = logging.getLogger(__name__)
@@ -32,7 +47,9 @@ class ESPNRequestsScraper(BaseScraper):
                 for t in league.get("teams", []):
                     team=t.get("team", {})
                     venue=team.get("venue", {})
-                    teams.append({"id":int(team.get("id")), "name":team.get("displayName", team.get("name", "")), "short_name":team.get("abbreviation", ""), "city":team.get("location", ""), "colors":team.get("color", ""), "stadium_name":STADIUMS.get(int(team.get("id")), {}).get("name"), "venue":venue})
+                    logos=team.get("logos") or []
+                    logo_url=logos[0].get("href") if logos else None
+                    teams.append({"id":int(team.get("id")), "name":team.get("displayName", team.get("name", "")), "short_name":team.get("abbreviation", ""), "city":team.get("location", ""), "colors":team.get("color", ""), "logo_url":logo_url, "stadium_name":STADIUMS.get(int(team.get("id")), {}).get("name"), "venue":venue})
         self._teams=teams
         return teams
     def get_standings(self) -> List[Dict]:
@@ -102,15 +119,14 @@ class ESPNRequestsScraper(BaseScraper):
                 if hn not in tnames or an not in tnames: continue
                 st=ev.get("status", {}).get("type", {})
                 status="finished" if st.get("completed") else "live" if st.get("state")=="in" else "scheduled"
-                rd=ev.get("date"); md=None
-                if rd:
-                    try: md=datetime.fromisoformat(rd.replace("Z","+00:00"))
-                    except: pass
+                md=_to_naive_utc(ev.get("date"))
                 matches[eid]={"event_id": eid, "home_team_id":int(home.get("team", {}).get("id")) if home.get("team", {}).get("id") else None, "away_team_id":int(away.get("team", {}).get("id")) if away.get("team", {}).get("id") else None, "home_team":hn, "away_team":an, "home_score":ps(home.get("score")), "away_score":ps(away.get("score")), "match_date":md, "status":status, "week":ev.get("week", {}).get("number")}
             time.sleep(0.15)
         return list(matches.values())
 
-    def get_top_scorers(self, season_name="2025") -> List[Dict]:
+    def get_top_scorers(self, season_name=None) -> List[Dict]:
+        from app.season import current_season_year
+        season_name = season_name or current_season_year()
         matches = self.get_matches()
         scorers = {}
         for match in matches:

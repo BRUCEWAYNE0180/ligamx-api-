@@ -4,8 +4,10 @@ from app import models
 def norm(s):
     return unicodedata.normalize('NFKD', s or '').encode('ASCII', 'ignore').decode('ASCII').lower().strip()
 
-def sync_player_stats(db, season="2025"):
+def sync_player_stats(db, season=None):
     from app.scrapers.player_stats_scraper import fetch_player_stats
+    from app.season import current_season_year
+    season = season or current_season_year()
     print("Sincronizando stats por jugador...")
     player_ids = {p.id for p in db.query(models.Player).all()}
     team_map = {norm(t.name): t.id for t in db.query(models.Team).all()}

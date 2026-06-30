@@ -1,7 +1,9 @@
 import time
 from app import models
 
-def sync_all_stats(db, matches, scraper, tmap, season="2025"):
+def sync_all_stats(db, matches, scraper, tmap, season=None):
+    from app.season import current_season_year
+    season = season or current_season_year()
     print("Sincronizando stats combinados...")
     db.query(models.TopScorer).filter(models.TopScorer.season == season).delete()
     db.query(models.MatchStat).filter(models.MatchStat.season == season).delete()

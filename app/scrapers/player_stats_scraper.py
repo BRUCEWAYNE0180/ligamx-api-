@@ -1,7 +1,9 @@
 import time
 from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
 
-def fetch_player_stats(limit=100, season="2025"):
+def fetch_player_stats(limit=100, season=None):
+    from app.season import current_season_year
+    season = season or current_season_year()
     scraper = ESPNRequestsScraper()
     matches = scraper.get_matches()
     stats = {}

@@ -6,6 +6,8 @@ class StadiumBase(BaseModel):
     name: str
     city: Optional[str] = None
     capacity: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class StadiumResponse(StadiumBase):
     id: int
@@ -17,6 +19,8 @@ class TeamBase(BaseModel):
     short_name: Optional[str] = None
     city: Optional[str] = None
     colors: Optional[str] = None
+    founded: Optional[int] = None
+    logo_url: Optional[str] = None
 
 class TeamResponse(TeamBase):
     id: int

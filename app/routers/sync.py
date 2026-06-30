@@ -7,6 +7,6 @@ from app.services.sync_service import run_sync
 router = APIRouter()
 
 @router.post("/sync")
-def sync_data(source: str = "demo", db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
+def sync_data(source: str = "espn", db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
     result = run_sync(db, source)
     return {"message": "Datos sincronizados", "source": source, "result": result}
