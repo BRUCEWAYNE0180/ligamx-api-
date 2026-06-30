@@ -69,6 +69,24 @@ def get_match_stats(event_id: str):
     scraper = ESPNRequestsScraper()
     return scraper.get_match_stats(event_id)
 
+@router.get("/matches/{event_id}/lineups")
+def get_match_lineups(event_id: str):
+    """Alineaciones del partido: titulares, suplentes, formacion y posiciones."""
+    scraper = ESPNRequestsScraper()
+    return scraper.get_match_lineups(event_id)
+
+@router.get("/matches/{event_id}/events")
+def get_match_events(event_id: str):
+    """Eventos clave del partido: goles, tarjetas y cambios."""
+    scraper = ESPNRequestsScraper()
+    return scraper.get_match_events(event_id)
+
+@router.get("/matches/{event_id}/cards")
+def get_match_cards(event_id: str):
+    """Solo tarjetas (amarillas y rojas) del partido."""
+    scraper = ESPNRequestsScraper()
+    return scraper.get_match_cards(event_id)
+
 @router.get("/weeks")
 def get_weeks(db: Session = Depends(get_db)):
     weeks = db.query(models.Match.week_number).filter(models.Match.week_number != None).distinct().order_by(models.Match.week_number).all()
