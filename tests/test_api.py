@@ -521,3 +521,39 @@ def test_team_stats_usa_etiqueta_de_temporada(client, seeded):
     assert r["season"] == "Apertura 2026"
     assert r["matches"] == 1
     assert r["totals"]["shots"] == 12
+
+
+
+# ---------- Joyita: shotmap/xG y top performers (365Scores) ----------
+
+def test_365_match_shots(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = {
+        "game_id": 123, "teams": {"home": "Pumas", "away": "Cruz Azul"},
+        "totals": {"home": {"shots": 8, "xg": 0.53, "xgot": 0.3, "goals": 0},
+                   "away": {"shots": 12, "xg": 0.95, "xgot": 0.7, "goals": 1}},
+        "shots": [{"minute": "6'", "team": "Cruz Azul", "side": "away", "player": "Rotondi",
+                   "xg": 0.03, "xgot": 0.11, "body_part": "Pie izquierdo",
+                   "outcome": "Atajado", "is_goal": False, "x": 47.9, "y": 75.4}],
+    }
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_match_shots",
+                        lambda self, game_id: fake)
+    r = client.get("/365scores/matches/123/shots").json()
+    assert r["totals"]["away"]["xg"] == 0.95
+    assert r["shots"][0]["player"] == "Rotondi"
+    assert r["shots"][0]["is_goal"] is False
+
+
+def test_365_top_performers(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = {"game_id": 123, "categories": [
+        {"category": "Delantero",
+         "home": {"player_id": 1, "name": "Morales", "position": "Centro Delantero",
+                  "stats": {"Total Remates": "2"}},
+         "away": {"player_id": 2, "name": "Otro", "position": "Delantero", "stats": {}}},
+    ]}
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_match_top_performers",
+                        lambda self, game_id: fake)
+    r = client.get("/365scores/matches/123/top-performers").json()
+    assert r["categories"][0]["category"] == "Delantero"
+    assert r["categories"][0]["home"]["name"] == "Morales"

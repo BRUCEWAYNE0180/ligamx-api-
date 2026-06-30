@@ -77,3 +77,18 @@ def player_leaders(category_id: int = Query(None, description="1=Goles, 3=Asiste
 def team_leaders(category_id: int = Query(None)):
     """Lideres de temporada por equipo."""
     return Scores365Scraper().get_team_season_leaders(category_id)
+
+
+@router.get("/matches/{game_id}/shots")
+@cached(120)
+def match_shots(game_id: int):
+    """Mapa de tiros con xG del partido: cada disparo con xG, xGoT, parte del
+    cuerpo, resultado y coordenadas, mas los totales de xG por equipo."""
+    return Scores365Scraper().get_match_shots(game_id)
+
+
+@router.get("/matches/{game_id}/top-performers")
+@cached(120)
+def match_top_performers(game_id: int):
+    """Mejores jugadores del partido por posicion (local y visitante)."""
+    return Scores365Scraper().get_match_top_performers(game_id)

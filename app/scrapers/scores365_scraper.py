@@ -383,3 +383,94 @@ class Scores365Scraper(BaseScraper):
         if category_id is not None:
             leaders = [c for c in leaders if c.get("category_id") == category_id]
         return leaders
+
+
+    def get_match_shots(self, game_id, game: Dict = None) -> Dict:
+        """Mapa de tiros con xG del partido (de chartEvents): cada disparo con su
+        xG, xGoT, parte del cuerpo, resultado (gol/atajado/fuera/bloqueado),
+        minuto, jugador y coordenadas en cancha. Incluye totales de xG por equipo.
+        Dato premium que ESPN no expone."""
+        game = game if game is not None else self._game_raw(game_id)
+        ce = game.get("chartEvents") or {}
+        events = ce.get("events") or []
+        members = {m["id"]: m["name"] for m in game.get("members", [])}
+        home = game.get("homeCompetitor", {}) or {}
+        away = game.get("awayCompetitor", {}) or {}
+        team_name = {1: home.get("name"), 2: away.get("name")}
+        team_side = {1: "home", 2: "away"}
+
+        def _f(v):
+            try:
+                return round(float(v), 2)
+            except (TypeError, ValueError):
+                return None
+
+        totals = {1: {"shots": 0, "xg": 0.0, "xgot": 0.0, "goals": 0},
+                  2: {"shots": 0, "xg": 0.0, "xgot": 0.0, "goals": 0}}
+        shots = []
+        for e in events:
+            cn = e.get("competitorNum")
+            outcome = e.get("outcome") or {}
+            outcome_name = outcome.get("name")
+            is_goal = bool(outcome_name and outcome_name.lower().startswith("gol"))
+            xg = _f(e.get("xg"))
+            xgot = _f(e.get("xgot"))
+            shots.append({
+                "minute": e.get("time"),
+                "team": team_name.get(cn),
+                "side": team_side.get(cn),
+                "player": members.get(e.get("playerId")),
+                "player_id": e.get("playerId"),
+                "xg": xg,
+                "xgot": xgot,
+                "body_part": e.get("bodyPart"),
+                "placement": e.get("goalDescription"),
+                "outcome": outcome_name,
+                "is_goal": is_goal,
+                "x": e.get("line"),
+                "y": e.get("side"),
+            })
+            if cn in totals:
+                t = totals[cn]
+                t["shots"] += 1
+                t["xg"] += xg or 0
+                t["xgot"] += xgot or 0
+                if is_goal:
+                    t["goals"] += 1
+
+        def _team_total(cn):
+            t = totals[cn]
+            return {"shots": t["shots"], "xg": round(t["xg"], 2),
+                    "xgot": round(t["xgot"], 2), "goals": t["goals"]}
+
+        return {
+            "game_id": game_id,
+            "teams": {"home": home.get("name"), "away": away.get("name")},
+            "totals": {"home": _team_total(1), "away": _team_total(2)},
+            "shots": shots,
+        }
+
+    def get_match_top_performers(self, game_id, game: Dict = None) -> Dict:
+        """Mejores jugadores del partido por posicion (delantero/mediocampista/
+        defensor), con sus stats destacadas, para local y visitante."""
+        game = game if game is not None else self._game_raw(game_id)
+        tp = game.get("topPerformers") or {}
+
+        def _player(p):
+            if not p:
+                return None
+            return {
+                "player_id": p.get("id"),
+                "name": p.get("name"),
+                "position": p.get("positionName"),
+                "stats": {s.get("name"): s.get("value") for s in (p.get("stats") or []) if s.get("name")},
+            }
+
+        categories = []
+        for c in tp.get("categories", []):
+            categories.append({
+                "category": c.get("name"),
+                "home": _player(c.get("homePlayer")),
+                "away": _player(c.get("awayPlayer")),
+            })
+        return {"game_id": game_id, "categories": categories}
