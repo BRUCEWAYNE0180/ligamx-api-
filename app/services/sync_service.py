@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import logging
 from typing import List, Dict, Any
 from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
@@ -32,7 +33,10 @@ def calculate_week_numbers(matches):
         ws = week_start(m["match_date"])
         m["week"] = week_number_by_start[ws]
 
+logger = logging.getLogger(__name__)
+
 def run_sync(db, source: str = "espn"):
+    logger.info(f"Iniciando sincronizacion desde {source}")
     scraper = get_scraper(source)
 
     for m in [
@@ -133,6 +137,8 @@ def run_sync(db, source: str = "espn"):
     db.commit()
 
     sync_all_stats(db, matches, scraper, tmap, str(current_year))
+
+    logger.info("Sincronizacion completada")
 
     # News sync
     db.query(models.News).delete()

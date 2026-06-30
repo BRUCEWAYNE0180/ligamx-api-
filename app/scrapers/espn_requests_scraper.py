@@ -1,8 +1,10 @@
-import time, requests, re
+import time, requests, re, logging
 from datetime import datetime
 from typing import List, Dict
 from app.scrapers.base import BaseScraper
 STADIUMS = {227: {'name': 'Estadio Azteca', 'city': 'Ciudad de México'}, 226: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 216: {'name': 'Estadio Jalisco', 'city': 'Guadalajara'}, 15720: {'name': 'Estadio Alfonso Lastras', 'city': 'San Luis Potosí'}, 218: {'name': 'Estadio Ciudad de los Deportes', 'city': 'Ciudad de México'}, 17851: {'name': 'Estadio Olímpico Benito Juárez', 'city': 'Ciudad Juárez'}, 219: {'name': 'Estadio Akron', 'city': 'Zapopan'}, 228: {'name': 'Estadio León', 'city': 'León'}, 220: {'name': 'Estadio BBVA', 'city': 'Guadalupe'}, 229: {'name': 'Estadio Victoria', 'city': 'Aguascalientes'}, 234: {'name': 'Estadio Hidalgo', 'city': 'Pachuca'}, 231: {'name': 'Estadio Cuauhtémoc', 'city': 'Puebla'}, 233: {'name': 'Estadio Olímpico Universitario', 'city': 'Ciudad de México'}, 222: {'name': 'Estadio Corregidora', 'city': 'Querétaro'}, 225: {'name': 'Estadio Corona', 'city': 'Torreón'}, 232: {'name': 'Estadio Universitario', 'city': 'San Nicolás de los Garza'}, 10125: {'name': 'Estadio Caliente', 'city': 'Tijuana'}, 223: {'name': 'Estadio Nemesio Díez', 'city': 'Toluca'}}
+
+logger = logging.getLogger(__name__)
 
 class ESPNRequestsScraper(BaseScraper):
     def __init__(self):
@@ -10,10 +12,18 @@ class ESPNRequestsScraper(BaseScraper):
         self._headers={"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     @property
     def source_name(self): return "espn_requests"
-    def _get_json(self, url, params=None):
-        r=requests.get(url, headers=self._headers, params=params, timeout=20)
-        r.raise_for_status()
-        return r.json()
+    def _get_json(self, url, params=None, retries=3):
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=self._headers, params=params, timeout=20)
+                r.raise_for_status()
+                return r.json()
+            except Exception as e:
+                logger.warning(f"Request failed (attempt {attempt+1}/{retries}): {url} - {e}")
+                if attempt == retries - 1:
+                    raise
+                time.sleep(2 ** attempt)
+        return {}
     def get_teams(self) -> List[Dict]:
         data=self._get_json("https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/teams", {"region":"mx","lang":"es"})
         teams=[]
