@@ -199,3 +199,81 @@ def power_ranking(season: str = Query(None), db: Session = Depends(get_db)):
         "formula": "70% puntos/partido + 30% diferencia de goles/partido (escala 0-100); xG informativo",
         "ranking": out,
     }
+
+
+
+# ---------- Jugadores a seguir en un partido ----------
+def _team_standouts(db: Session, team_id: int, label: str, limit: int):
+    """Jugadores destacados de un equipo en la temporada, con un 'watch score'
+    y un motivo explicable. Sale de player_match_stats."""
+    M = models.PlayerMatchStat
+    rows = (
+        db.query(M.player_name, func.count(M.id), func.sum(M.goals), func.sum(M.assists),
+                 func.sum(M.xg), func.sum(M.xa), func.avg(M.rating))
+        .filter(M.team_id == team_id, M.season == label)
+        .group_by(M.player_name)
+        .all()
+    )
+    players = []
+    for name, apps, g, a, xg, xa, avg_r in rows:
+        g = int(g or 0)
+        a = int(a or 0)
+        xg = float(xg or 0)
+        xa = float(xa or 0)
+        r = float(avg_r or 0)
+        score = g * 4 + a * 2.5 + xg * 1.5 + xa + r * 3
+
+        if g >= 2 and g >= a:
+            reason = f"{g} goles en la temporada"
+        elif a >= 2:
+            reason = f"{a} asistencias en la temporada"
+        elif r >= 7.2:
+            reason = "en gran forma (rating alto)"
+        elif xg >= 1.5:
+            reason = "genera mucho peligro (xG alto)"
+        elif g >= 1:
+            reason = f"{g} gol(es) anotado(s)"
+        else:
+            reason = "jugador habitual del equipo"
+
+        players.append({
+            "player": name, "watch_score": round(score, 1), "reason": reason,
+            "appearances": apps, "goals": g, "assists": a,
+            "xg": round(xg, 2), "xa": round(xa, 2),
+            "avg_rating": round(r, 2) if r else None,
+        })
+    players.sort(key=lambda p: p["watch_score"], reverse=True)
+    return players[:limit]
+
+
+@router.get("/matches/{match_id}/players-to-watch")
+def players_to_watch(match_id: int, limit: int = Query(3, ge=1, le=6),
+                     season: str = Query(None), db: Session = Depends(get_db)):
+    """Jugadores a seguir en un partido: los más destacados de cada equipo según
+    su forma de la temporada (goles, asistencias, xG, xA y rating)."""
+    match = get_or_404(db, models.Match, match_id)
+    if season:
+        label = resolve_season_label(db, season)
+    else:
+        mseason = db.get(models.Season, match.season_id) if match.season_id else None
+        label = mseason.name if mseason else resolve_season_label(db, None)
+
+    home = _team_standouts(db, match.home_team_id, label, limit)
+    away = _team_standouts(db, match.away_team_id, label, limit)
+    result = {
+        "match_id": match_id,
+        "season": label,
+        "home_team": {
+            "id": match.home_team_id,
+            "name": match.home_team.name if match.home_team else None,
+            "players": home,
+        },
+        "away_team": {
+            "id": match.away_team_id,
+            "name": match.away_team.name if match.away_team else None,
+            "players": away,
+        },
+    }
+    if not home and not away:
+        result["note"] = "Sin datos suficientes todavía (la temporada no tiene partidos jugados); se llena conforme se juegue."
+    return result

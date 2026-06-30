@@ -753,3 +753,25 @@ def test_team_profile(client, seeded, db):
     assert r["xg"] == 1.2
     assert r["squad_size"] >= 1
     assert "form" in r and "last_result" in r
+
+
+
+# ---------- Jugadores a seguir ----------
+
+def test_players_to_watch(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/matches/1/players-to-watch").json()
+    assert r["season"] == "Apertura 2026"
+    assert r["home_team"]["id"] == 1 and r["away_team"]["id"] == 2
+    hp = r["home_team"]["players"]
+    assert hp and hp[0]["player"] == "Henry Martín"
+    assert hp[0]["goals"] == 2 and "reason" in hp[0] and hp[0]["watch_score"] > 0
+    ap = r["away_team"]["players"]
+    assert ap and ap[0]["player"] == "Rival X"
+
+
+def test_players_to_watch_sin_datos(client, seeded):
+    # match sembrado pero sin player_match_stats -> note y listas vacías
+    r = client.get("/matches/1/players-to-watch").json()
+    assert r["home_team"]["players"] == [] and r["away_team"]["players"] == []
+    assert "note" in r
