@@ -102,32 +102,58 @@ def get_match_sofascore(match_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No hay datos de SofaScore para este partido")
     return get_match_details(match.sofascore_event_id)
 
-@router.get("/matches/{event_id}/stats")
+# Funciones cacheadas que golpean la fuente externa (clave de cache = id externo).
 @cached(120)
-def get_match_stats(event_id: str):
-    scraper = ESPNRequestsScraper()
-    return scraper.get_match_stats(event_id)
+def _fetch_stats(event_id: str):
+    return ESPNRequestsScraper().get_match_stats(event_id)
 
-@router.get("/matches/{event_id}/lineups")
+
 @cached(120)
-def get_match_lineups(event_id: str):
+def _fetch_lineups(event_id: str):
+    return ESPNRequestsScraper().get_match_lineups(event_id)
+
+
+@cached(120)
+def _fetch_events(event_id: str):
+    return ESPNRequestsScraper().get_match_events(event_id)
+
+
+@cached(120)
+def _fetch_cards(event_id: str):
+    return ESPNRequestsScraper().get_match_cards(event_id)
+
+
+def _external_event_id(match_id: int, db: Session) -> str:
+    """Resuelve el id externo (ESPN) a partir del id interno del partido.
+    Lanza 404 si el partido no existe o no tiene id externo."""
+    match = get_or_404(db, models.Match, match_id)
+    if not match.external_event_id:
+        raise HTTPException(status_code=404, detail="Este partido no tiene id externo de la fuente")
+    return match.external_event_id
+
+
+@router.get("/matches/{match_id}/stats")
+def get_match_stats(match_id: int, db: Session = Depends(get_db)):
+    """Estadisticas del partido (posesion, tiros, tarjetas, pases, etc.) desde la fuente."""
+    return _fetch_stats(_external_event_id(match_id, db))
+
+
+@router.get("/matches/{match_id}/lineups")
+def get_match_lineups(match_id: int, db: Session = Depends(get_db)):
     """Alineaciones del partido: titulares, suplentes, formacion y posiciones."""
-    scraper = ESPNRequestsScraper()
-    return scraper.get_match_lineups(event_id)
+    return _fetch_lineups(_external_event_id(match_id, db))
 
-@router.get("/matches/{event_id}/events")
-@cached(120)
-def get_match_events(event_id: str):
+
+@router.get("/matches/{match_id}/events")
+def get_match_events(match_id: int, db: Session = Depends(get_db)):
     """Eventos clave del partido: goles, tarjetas y cambios."""
-    scraper = ESPNRequestsScraper()
-    return scraper.get_match_events(event_id)
+    return _fetch_events(_external_event_id(match_id, db))
 
-@router.get("/matches/{event_id}/cards")
-@cached(120)
-def get_match_cards(event_id: str):
+
+@router.get("/matches/{match_id}/cards")
+def get_match_cards(match_id: int, db: Session = Depends(get_db)):
     """Solo tarjetas (amarillas y rojas) del partido."""
-    scraper = ESPNRequestsScraper()
-    return scraper.get_match_cards(event_id)
+    return _fetch_cards(_external_event_id(match_id, db))
 
 @router.get("/weeks")
 def get_weeks(db: Session = Depends(get_db)):
@@ -203,7 +229,7 @@ def get_match_full(match_id: int, db: Session = Depends(get_db)):
     estado, linea de tiempo (eventos), alineaciones y estadisticas."""
     match = (
         db.query(models.Match)
-        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team), joinedload(models.Match.stadium))
         .filter(models.Match.id == match_id)
         .first()
     )
@@ -239,13 +265,21 @@ def get_match_full(match_id: int, db: Session = Depends(get_db)):
     def stat(s):
         return {"team_id": s.team_id, "team_name": s.team_name, "possession": s.possession,
                 "shots": s.shots, "shots_on_target": s.shots_on_target, "corners": s.corners,
-                "fouls": s.fouls, "yellow_cards": s.yellow_cards, "red_cards": s.red_cards}
+                "fouls": s.fouls, "yellow_cards": s.yellow_cards, "red_cards": s.red_cards,
+                "offsides": s.offsides, "saves": s.saves, "passes": s.passes,
+                "total_passes": s.total_passes, "tackles": s.tackles,
+                "interceptions": s.interceptions, "blocked_shots": s.blocked_shots,
+                "crosses": s.crosses, "long_balls": s.long_balls}
 
     return {
         "id": match.id,
         "status": match.status,
         "match_date": match.match_date,
         "week_number": match.week_number,
+        "venue": {
+            "id": match.stadium.id, "name": match.stadium.name,
+            "city": match.stadium.city, "capacity": match.stadium.capacity,
+        } if match.stadium else None,
         "home_team": {"id": match.home_team_id, "name": match.home_team.name if match.home_team else None},
         "away_team": {"id": match.away_team_id, "name": match.away_team.name if match.away_team else None},
         "score": {"home": match.home_score, "away": match.away_score},

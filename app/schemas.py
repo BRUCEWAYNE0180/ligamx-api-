@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -11,8 +11,7 @@ class StadiumBase(BaseModel):
 
 class StadiumResponse(StadiumBase):
     id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamBase(BaseModel):
     name: str
@@ -25,8 +24,7 @@ class TeamBase(BaseModel):
 class TeamResponse(TeamBase):
     id: int
     stadium: Optional[StadiumResponse] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PlayerBase(BaseModel):
     name: str
@@ -39,8 +37,7 @@ class PlayerBase(BaseModel):
 class PlayerResponse(PlayerBase):
     id: int
     team_id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MatchBase(BaseModel):
     home_team_id: int
@@ -56,8 +53,7 @@ class MatchResponse(MatchBase):
     id: int
     home_team: Optional[TeamResponse] = None
     away_team: Optional[TeamResponse] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class StandingResponse(BaseModel):
     position: int
@@ -70,8 +66,7 @@ class StandingResponse(BaseModel):
     goals_against: int
     goal_difference: int
     points: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TopScorerResponse(BaseModel):
     id: int
@@ -84,8 +79,7 @@ class TopScorerResponse(BaseModel):
     season: Optional[str] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class NewsResponse(BaseModel):
     id: int
@@ -95,8 +89,7 @@ class NewsResponse(BaseModel):
     source: Optional[str] = None
     published_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MatchStatResponse(BaseModel):
     id: int
@@ -111,8 +104,16 @@ class MatchStatResponse(BaseModel):
     fouls: Optional[int] = None
     yellow_cards: Optional[int] = None
     red_cards: Optional[int] = None
-    class Config:
-        from_attributes = True
+    offsides: Optional[int] = None
+    saves: Optional[int] = None
+    passes: Optional[int] = None
+    total_passes: Optional[int] = None
+    tackles: Optional[int] = None
+    interceptions: Optional[int] = None
+    blocked_shots: Optional[int] = None
+    crosses: Optional[int] = None
+    long_balls: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
 
 class PlayerStatResponse(BaseModel):
     id: int
@@ -126,8 +127,7 @@ class PlayerStatResponse(BaseModel):
     yellow_cards: int
     red_cards: int
     matches_played: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MatchEventResponse(BaseModel):
@@ -140,8 +140,7 @@ class MatchEventResponse(BaseModel):
     team_id: Optional[int] = None
     description: Optional[str] = None
     is_home: Optional[int] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MatchLineupResponse(BaseModel):
     id: int
@@ -152,5 +151,4 @@ class MatchLineupResponse(BaseModel):
     position: Optional[str] = None
     is_substitute: int = 0
     jersey_number: Optional[int] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
