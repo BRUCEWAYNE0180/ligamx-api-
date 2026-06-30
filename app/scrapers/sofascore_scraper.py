@@ -2,7 +2,7 @@ import requests
 import time
 
 TOURNAMENT_ID = 11621
-SEASON_ID = 76500
+SEASON_ID = 96191  # Liga MX Apertura 2026
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def _get(url):
@@ -10,10 +10,10 @@ def _get(url):
     r.raise_for_status()
     return r.json()
 
-def get_events():
+def get_events(season_id=SEASON_ID):
     events = []
     for round_num in range(1, 30):
-        url = f"https://www.sofascore.com/api/v1/unique-tournament/{TOURNAMENT_ID}/season/{SEASON_ID}/events/round/{round_num}"
+        url = f"https://www.sofascore.com/api/v1/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/events/round/{round_num}"
         try:
             data = _get(url)
         except requests.exceptions.HTTPError as e:
@@ -23,10 +23,23 @@ def get_events():
         if not data.get("events"):
             break
         events.extend(data["events"])
+        time.sleep(0.1)
     return events
 
-def get_player_stats(limit=100):
-    events = get_events()
+def get_match_details(event_id):
+    url = f"https://www.sofascore.com/api/v1/event/{event_id}"
+    return _get(url)
+
+def get_match_incidents(event_id):
+    url = f"https://www.sofascore.com/api/v1/event/{event_id}/incidents"
+    return _get(url)
+
+def get_lineups(event_id):
+    url = f"https://www.sofascore.com/api/v1/event/{event_id}/lineups"
+    return _get(url)
+
+def get_player_stats(season_id=SEASON_ID, limit=100):
+    events = get_events(season_id)
     stats = {}
     seen = {}
     for ev in events:
