@@ -18,7 +18,7 @@ from app.database import engine, Base
 from app import models  # noqa: F401  (registra los modelos en Base.metadata)
 from app.rate_limit import limiter
 from app.metrics import metrics
-from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search, live, analytics
+from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search, live, analytics, overview
 
 # Logging estructurado basico (timestamp, nivel, logger). En produccion se puede
 # enviar a un colector; aqui dejamos un formato consistente para todos los logs.
@@ -51,7 +51,23 @@ def _unique_route_id(route) -> str:
     return re.sub(r"[^0-9a-zA-Z_]", "_", f"{route.name}_{route.path}").strip("_")
 
 
-app = FastAPI(title="Liga MX API", version="1.0", generate_unique_id_function=_unique_route_id)
+app = FastAPI(
+    title="Liga MX API",
+    version="1.0",
+    description=(
+        "API de la Liga MX (Apertura 2026). Datos de múltiples fuentes públicas: "
+        "equipos, jugadores, partidos, tabla, goleadores, estadísticas avanzadas "
+        "(xG por tiro/jugador/equipo), árbitros, alineaciones, heatmaps, calendario, "
+        "Liguilla, noticias, marcadores en vivo (SSE), comparador y predictor.\n\n"
+        "Todas las rutas existen en la raíz (`/...`) y bajo `/v1/...`."
+    ),
+    openapi_tags=[
+        {"name": "365scores", "description": "Datos en vivo y avanzados (xG, alineaciones, heatmaps, porteros, noticias)."},
+        {"name": "meta", "description": "Versión, métricas y salud de la API."},
+    ],
+    contact={"name": "Liga MX API", "url": "https://github.com/BRUCEWAYNE0180/ligamx-api-"},
+    generate_unique_id_function=_unique_route_id,
+)
 
 # Rate limiting por IP (slowapi). El limite por defecto aplica a todas las rutas;
 # los endpoints sensibles (sync) anaden un limite mas estricto.
@@ -103,7 +119,7 @@ app.add_middleware(
 ROUTERS = [
     health.router, teams.router, matches.router, standings.router, stadiums.router,
     players.router, stats.router, news.router, sync.router, sofascore.router,
-    scores365.router, extras.router, search.router, live.router, analytics.router,
+    scores365.router, extras.router, search.router, live.router, analytics.router, overview.router,
 ]
 
 for _r in ROUTERS:

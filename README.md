@@ -89,7 +89,9 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### General
 - `GET /` — info de la API
-- `GET /health` — health check
+- `GET /dashboard?season=` — **resumen todo-en-uno**: líder de tabla, goleador, próximos partidos, últimos resultados y noticias (ideal para una home/bot) 🆕
+- `GET /health` — health check (liveness)
+- `GET /health/ready` — **readiness**: verifica conexión a BD y Redis 🆕
 - `GET /version` — versiones de la API disponibles
 - `GET /metrics` — **observabilidad**: uptime, total de requests, desglose por código, latencias, rutas más usadas y estado del caché 🆕
 - `GET /season` — **torneo vigente y datos cargados** (Apertura/Clausura, si ya inició, total de partidos) 🆕

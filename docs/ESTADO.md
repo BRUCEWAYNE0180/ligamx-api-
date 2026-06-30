@@ -89,6 +89,9 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- `GET /dashboard`: resumen de la temporada en una llamada (líder, goleador,
+  próximos, resultados, noticias). `GET /health/ready`: readiness (BD + Redis).
+  Metadata y tags en `/docs`.
 - **Analítica**: comparador de jugadores (`/compare/players`) y equipos
   (`/compare/teams`), y predictor de partidos (`/predict`, modelo Poisson con
   fuerzas de ataque/defensa + ventaja de local).

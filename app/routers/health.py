@@ -1,8 +1,10 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app import models
+from app import models, cache
 from app.season import current_tournament, current_season_name, to_naive_utc
 from app.metrics import metrics
 from app.cache import cache_stats
@@ -16,6 +18,27 @@ def read_root():
 @router.get("/health")
 def health_check():
     return {"status": "ok", "timestamp": datetime.now()}
+
+
+@router.get("/health/ready")
+def readiness(db: Session = Depends(get_db)):
+    """Readiness: verifica conexión a BD y a Redis. Devuelve 503 si la BD no
+    responde (Redis es opcional, no marca 'no listo')."""
+    checks = {"database": "ok", "redis": "disabled"}
+    healthy = True
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        checks["database"] = f"error: {str(e)[:80]}"
+        healthy = False
+    if cache._redis is not None:
+        try:
+            cache._redis.ping()
+            checks["redis"] = "ok"
+        except Exception as e:
+            checks["redis"] = f"error: {str(e)[:80]}"
+    return JSONResponse(status_code=200 if healthy else 503,
+                        content={"ready": healthy, "checks": checks})
 
 
 @router.get("/metrics", tags=["meta"])
