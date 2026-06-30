@@ -34,3 +34,19 @@ def test_cache_expira():
     b = f()
     assert calls["n"] == 2
     assert b != a
+
+
+
+def test_cache_stats_backend_memoria():
+    # Sin REDIS_URL, el backend por defecto es 'memory' y reporta entradas.
+    from app.cache import cache_stats, cached, clear_cache
+    clear_cache()
+
+    @cached(60)
+    def g():
+        return [1, 2, 3]
+
+    g()
+    stats = cache_stats()
+    assert stats["backend"] == "memory"
+    assert stats["entries"] >= 1

@@ -81,7 +81,8 @@ detectado en los datos no coincide con el esperado.
 - [x] **Seguridad endurecida**: `verify_api_key` con comparación de tiempo
       constante y `503` si falta `SYNC_API_KEY`; cabeceras `X-Content-Type-Options`,
       `X-Frame-Options`, `Referrer-Policy`.
-- [ ] Redis para caché compartido entre workers.
+- [x] **Redis opcional** para caché compartido entre workers (`REDIS_URL`); con
+      fallback transparente al caché en proceso si Redis no está o no conecta.
 - [x] **Observabilidad**: logging de acceso (método, ruta, status, ms) y métricas
       en proceso en `GET /metrics` (uptime, requests por código, latencias, top rutas, caché).
 - [x] **Versionado de API**: todas las rutas existen en la raíz (`/...`, legado) y
