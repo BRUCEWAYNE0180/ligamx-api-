@@ -52,6 +52,7 @@ Fuentes válidas para `source`: `espn` (recomendada), `365scores`, `demo` (datos
 | `RATE_LIMIT_ENABLED` | Activa el rate limiting por IP | `true` |
 | `RATE_LIMIT_DEFAULT` | Límite global por IP | `200/minute` |
 | `RATE_LIMIT_SYNC` | Límite para `POST /sync` y `/sync/backfill` | `10/minute` |
+| `LOG_LEVEL` | Nivel de logging (`DEBUG`/`INFO`/`WARNING`...) | `INFO` |
 
 > El esquema `postgres://` se normaliza automáticamente a `postgresql://`.
 
@@ -87,6 +88,8 @@ alembic revision --autogenerate -m "describe el cambio"
 ### General
 - `GET /` — info de la API
 - `GET /health` — health check
+- `GET /version` — versiones de la API disponibles
+- `GET /metrics` — **observabilidad**: uptime, total de requests, desglose por código, latencias, rutas más usadas y estado del caché 🆕
 - `GET /season` — **torneo vigente y datos cargados** (Apertura/Clausura, si ya inició, total de partidos) 🆕
 
 ### Equipos
