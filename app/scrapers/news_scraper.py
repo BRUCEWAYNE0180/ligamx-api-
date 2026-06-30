@@ -1,37 +1,42 @@
-import re
-import feedparser
 from datetime import datetime
 from typing import List, Dict
+from playwright.sync_api import sync_playwright
 
-NEWS_FEEDS = [
-    "https://news.google.com/rss/search?q=Liga+MX&hl=es-419&gl=MX&ceid=MX:es-419",
-    "https://www.espn.com.mx/espn/rss?images=off",
-]
-
-def _strip_html(text):
-    return re.sub(r"<[^>]+>", "", text or "")
-
-def _parse_date(entry):
-    if hasattr(entry, "published_parsed") and entry.published_parsed:
-        return datetime(*entry.published_parsed[:6])
-    if hasattr(entry, "updated_parsed") and entry.updated_parsed:
-        return datetime(*entry.updated_parsed[:6])
-    return None
-
-def fetch_news(limit=20) -> List[Dict]:
-    items = []
-    for url in NEWS_FEEDS:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:limit]:
-                items.append({
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "description": _strip_html(entry.get("summary", ""))[:500],
-                    "published_at": _parse_date(entry),
-                    "source": feed.feed.get("title", url),
+def fetch_flashscore_news(limit: int = 20) -> List[Dict]:
+    url = "https://www.flashscore.com.mx/futbol/mexico/liga-mx/noticias/"
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle")
+        page.wait_for_timeout(3000)
+        
+        articles = page.query_selector_all("a[class*='wcl-article']")
+        
+        news = []
+        for article in articles[:limit]:
+            try:
+                title_elem = article.query_selector("h3")
+                if not title_elem:
+                    continue
+                title = title_elem.inner_text().strip()
+                
+                href = article.get_attribute("href")
+                if href and href.startswith("/"):
+                    href = f"https://www.flashscore.com.mx{href}"
+                
+                news.append({
+                    "title": title,
+                    "link": href,
+                    "description": title,
+                    "published_at": datetime.now(),
+                    "source": "flashscore"
                 })
-        except Exception as e:
-            print(f"⚠️ news feed {url}: {e}")
-    items.sort(key=lambda x: x["published_at"] or datetime.min, reverse=True)
-    return items[:limit]
+            except Exception:
+                continue
+        
+        browser.close()
+        return news
+
+def fetch_news(limit: int = 20) -> List[Dict]:
+    return fetch_flashscore_news(limit)

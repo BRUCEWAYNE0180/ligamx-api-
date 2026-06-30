@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import verify_api_key
 from app.scrapers.factory import get_scraper
+from app.scrapers.news_scraper import fetch_news
 from app import models
 
 router = APIRouter()
@@ -88,4 +89,11 @@ def sync_data(source: str = "demo", db: Session = Depends(get_db), api_key: str 
         ))
 
     db.commit()
+
+    # News sync
+    db.query(models.News).delete()
+    for n in fetch_news(limit=50):
+        db.add(models.News(**n))
+    db.commit()
+
     return {"message": "Datos sincronizados", "source": source, "scraper": scraper.source_name}
