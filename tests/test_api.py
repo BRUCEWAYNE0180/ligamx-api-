@@ -155,3 +155,63 @@ def test_365_match_player_stats(client, monkeypatch):
     body = r.json()
     assert body["teams"][0]["players"][0]["rating"] == 6.8
     assert body["teams"][0]["players"][0]["stats"]["Minutes"] == "90'"
+
+
+
+# ---------- Fase D: stats por jugador persistidas en BD ----------
+
+def test_stat_parsers():
+    from app.services.sync_service import _stat_int, _stat_float, _stat_fraction
+    assert _stat_int("58'") == 58
+    assert _stat_int("0") == 0
+    assert _stat_int(None) is None
+    assert _stat_float("0.05") == 0.05
+    assert _stat_float("90'") == 90.0
+    assert _stat_fraction("21/26 (81%)") == (21, 26)
+    assert _stat_fraction("5") == (5, None)
+    assert _stat_fraction(None) == (None, None)
+
+
+def _seed_player_match_stats(db):
+    from app import models
+    db.add(models.PlayerMatchStat(
+        match_id=1, player_id=999, player_name="Henry Martín", team_id=1, team_name="América",
+        season="2026", starter=1, minutes=90, goals=2, assists=1, shots=4, xg=1.2, xa=0.3,
+        touches=60, interceptions=1, rating=8.5, stats={"Toques": "60"}))
+    db.add(models.PlayerMatchStat(
+        match_id=1, player_id=998, player_name="Rival X", team_id=2, team_name="Chivas",
+        season="2026", starter=1, minutes=90, goals=0, assists=0, rating=6.1))
+    db.commit()
+
+
+def test_match_player_stats_db(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/matches/1/player-stats").json()
+    teams = {t["team_id"]: t for t in r["teams"]}
+    assert 1 in teams and 2 in teams
+    p = teams[1]["players"][0]
+    assert p["player_name"] == "Henry Martín"
+    assert p["goals"] == 2 and p["assists"] == 1 and p["rating"] == 8.5
+
+
+def test_player_season_stats(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/10/season-stats").json()
+    assert r["appearances"] == 1
+    assert r["goals"] == 2 and r["assists"] == 1
+    assert r["minutes"] == 90 and r["avg_rating"] == 8.5
+
+
+def test_player_match_stats_history(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/10/match-stats").json()
+    assert len(r) == 1 and r[0]["goals"] == 2 and r[0]["match_id"] == 1
+
+
+def test_players_season_leaders(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/players/season-leaders", params={"stat": "goals"}).json()
+    assert r[0]["player"] == "Henry Martín" and r[0]["value"] == 2
+    # rating con filtro de apariciones
+    r2 = client.get("/players/season-leaders", params={"stat": "rating"}).json()
+    assert r2[0]["player"] == "Henry Martín" and r2[0]["value"] == 8.5

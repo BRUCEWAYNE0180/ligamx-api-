@@ -223,6 +223,28 @@ def get_match_squad(match_id: int, db: Session = Depends(get_db)):
     return {"match_id": match_id, "teams": list(teams.values())}
 
 
+@router.get("/matches/{match_id}/player-stats")
+def get_match_player_stats_db(match_id: int, db: Session = Depends(get_db)):
+    """Estadisticas COMPLETAS por jugador del partido, persistidas en BD (via
+    365Scores): minutos, goles, asistencias, xG, xA, remates, pases, regates,
+    intercepciones, rating... para TODOS los jugadores, agrupadas por equipo."""
+    get_or_404(db, models.Match, match_id)
+    rows = db.query(models.PlayerMatchStat).filter(models.PlayerMatchStat.match_id == match_id).all()
+    teams = {}
+    for r in rows:
+        t = teams.setdefault(r.team_id, {"team_id": r.team_id, "team_name": r.team_name, "players": []})
+        t["players"].append({
+            "player_id": r.player_id, "player_name": r.player_name, "starter": bool(r.starter),
+            "minutes": r.minutes, "goals": r.goals, "assists": r.assists, "shots": r.shots,
+            "xg": r.xg, "xa": r.xa, "key_passes": r.key_passes, "touches": r.touches,
+            "passes_completed": r.passes_completed, "passes_attempted": r.passes_attempted,
+            "interceptions": r.interceptions, "rating": r.rating, "stats": r.stats,
+        })
+    for t in teams.values():
+        t["players"].sort(key=lambda p: (p["rating"] is None, -(p["rating"] or 0)))
+    return {"match_id": match_id, "teams": list(teams.values())}
+
+
 @router.get("/matches/{match_id}/full")
 def get_match_full(match_id: int, db: Session = Depends(get_db)):
     """TODO el detalle de un partido en una sola respuesta: equipos, marcador,

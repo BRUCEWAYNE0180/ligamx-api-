@@ -203,11 +203,18 @@ class Scores365Scraper(BaseScraper):
     def _game_raw(self, game_id) -> Dict:
         return self._get_json("game/", {"gameId": game_id}).get("game", {})
 
-    def get_match_info(self, game_id) -> Dict:
+    def get_game(self, game_id) -> Dict:
+        """Detalle crudo del partido (un request). Util para extraer en una sola
+        llamada el arbitro, las alineaciones, eventos y las stats por jugador."""
+        return self._game_raw(game_id)
+
+    def get_match_info(self, game_id, game: Dict = None) -> Dict:
         """Ficha del partido: sede (estadio), arbitro y cuerpo arbitral,
         marcador, estado, jornada y temporada. El arbitro (officials) es un
-        dato que ESPN no expone y suele interesar mucho a los aficionados."""
-        game = self._game_raw(game_id)
+        dato que ESPN no expone y suele interesar mucho a los aficionados.
+
+        Acepta un `game` ya descargado para evitar pedir el detalle dos veces."""
+        game = game if game is not None else self._game_raw(game_id)
         home = game.get("homeCompetitor", {}) or {}
         away = game.get("awayCompetitor", {}) or {}
         venue = game.get("venue") or {}
@@ -297,13 +304,16 @@ class Scores365Scraper(BaseScraper):
                 if e["category"] in ("yellow_card", "red_card")]
 
     # ---------- Joyitas: estadisticas por jugador ----------
-    def get_match_player_stats(self, game_id) -> Dict:
+    def get_match_player_stats(self, game_id, game: Dict = None) -> Dict:
         """Estadisticas COMPLETAS por jugador en un partido: minutos, goles,
         asistencias, xG, xA, remates, pases completados, regates, duelos,
         intercepciones, toques, rating (ranking)... para TODOS los jugadores
         de la alineacion (no solo los que anotan). ESPN no expone este detalle.
-        """
-        game = self._game_raw(game_id)
+
+        Acepta un `game` ya descargado para evitar pedir el detalle dos veces.
+        Cada jugador trae `stats` (nombre->valor, en espanol) y `stats_by_type`
+        (id_de_metrica->valor), util para parsear sin depender del idioma."""
+        game = game if game is not None else self._game_raw(game_id)
         members = {m["id"]: m for m in game.get("members", [])}
         teams = []
         for side in ("homeCompetitor", "awayCompetitor"):
@@ -313,9 +323,11 @@ class Scores365Scraper(BaseScraper):
             for m in lu.get("members", []):
                 info = members.get(m.get("id"), {})
                 pos = m.get("position", {}) or {}
-                # Las stats vienen como lista de {name, value}; las volvemos
-                # un dict {nombre: valor} mas comodo de consumir.
-                stats = {s.get("name"): s.get("value") for s in (m.get("stats") or []) if s.get("name")}
+                raw_stats = m.get("stats") or []
+                # Las stats vienen como lista de {type, name, value}; las volvemos
+                # dos dicts: por nombre (consumo humano) y por type (parseo robusto).
+                stats = {s.get("name"): s.get("value") for s in raw_stats if s.get("name")}
+                stats_by_type = {s.get("type"): s.get("value") for s in raw_stats if s.get("type") is not None}
                 players.append({
                     "player_id": int(m["id"]) if m.get("id") else None,
                     "name": info.get("name") or info.get("shortName"),
@@ -324,6 +336,7 @@ class Scores365Scraper(BaseScraper):
                     "starter": m.get("status") == 1 or m.get("statusText") == "Starting",
                     "rating": m.get("ranking"),
                     "stats": stats,
+                    "stats_by_type": stats_by_type,
                 })
             teams.append({
                 "team_id": int(c["id"]) if c.get("id") else None,

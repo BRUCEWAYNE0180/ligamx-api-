@@ -113,49 +113,131 @@ def _sync_sofascore_event_ids(db):
     except Exception as e:
         logger.warning(f"SofaScore event ID sync failed: {e}")
 
-def _sync_referees(db):
-    """Asigna el arbitro a cada partido jugado cruzando con 365Scores (que SI
-    expone el cuerpo arbitral; ESPN no). Se empareja por nombres de equipo y
-    fecha. Best-effort y aislado: un fallo no invalida el resto del sync."""
+_S_MIN, _S_GOALS, _S_ASSIST, _S_XG, _S_XA = 30, 27, 26, 76, 78
+_S_SHOTS, _S_KEYP, _S_TOUCH, _S_PASSC, _S_INT = 3, 46, 45, 19, 41
+
+
+def _stat_int(v):
+    if v is None:
+        return None
+    m = re.match(r"\s*(-?\d+)", str(v))
+    return int(m.group(1)) if m else None
+
+
+def _stat_float(v):
+    if v is None:
+        return None
+    m = re.match(r"\s*(-?\d+(?:\.\d+)?)", str(v))
+    return float(m.group(1)) if m else None
+
+
+def _stat_fraction(v):
+    """'21/26 (81%)' -> (21, 26). '5' -> (5, None)."""
+    if v is None:
+        return (None, None)
+    m = re.match(r"\s*(\d+)\s*/\s*(\d+)", str(v))
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    return (_stat_int(v), None)
+
+
+def _find_365_game(games, home, away, match_date):
+    """Empareja un partido de la BD con un juego de 365Scores por nombres de
+    equipo y fecha (tolerancia de 2 dias)."""
+    for g in games:
+        if not (_teams_match(home, g.get("home_team")) and _teams_match(away, g.get("away_team"))):
+            continue
+        gd = g["match_date"].date() if g.get("match_date") else None
+        if match_date and gd and abs((match_date - gd).days) > 2:
+            continue
+        return g
+    return None
+
+
+def _sync_365_match_details(db, season):
+    """En UNA sola pasada por 365Scores (un request por partido jugado), persiste:
+      - el arbitro de cada partido (ESPN no lo expone), y
+      - las estadisticas COMPLETAS por jugador (tabla player_match_stats).
+    Empareja los partidos por nombres de equipo + fecha. Best-effort y aislado:
+    un fallo no invalida el resto del sync."""
     try:
         from app.scrapers.scores365_scraper import Scores365Scraper
         scraper = Scores365Scraper()
         games = [g for g in scraper.get_matches() if g.get("status") == "finished"]
         if not games:
             return
-        db_matches = (
-            db.query(models.Match)
-            .filter(models.Match.status == "finished", models.Match.referee.is_(None))
-            .all()
-        )
-        updated = 0
+        # Reemplazo idempotente de las stats por jugador de esta temporada.
+        db.query(models.PlayerMatchStat).filter(models.PlayerMatchStat.season == season).delete()
+        db.commit()
+
+        db_matches = db.query(models.Match).filter(models.Match.status == "finished").all()
+        refs = rows = 0
         for dm in db_matches:
             home = dm.home_team.name if dm.home_team else None
             away = dm.away_team.name if dm.away_team else None
             if not home or not away:
                 continue
             md = dm.match_date.date() if dm.match_date else None
-            for g in games:
-                if not (_teams_match(home, g.get("home_team")) and _teams_match(away, g.get("away_team"))):
-                    continue
-                gd = g["match_date"].date() if g.get("match_date") else None
-                if md and gd and abs((md - gd).days) > 2:
-                    continue
+            g = _find_365_game(games, home, away, md)
+            if not g:
+                continue
+            try:
+                game = scraper.get_game(g["event_id"])
+            except Exception as e:
+                logger.warning(f"365 detalle del juego {g.get('event_id')} fallo: {e}")
+                continue
+
+            # Arbitro
+            if dm.referee is None:
                 try:
-                    info = scraper.get_match_info(g["event_id"])
+                    info = scraper.get_match_info(g["event_id"], game=game)
+                    if info.get("referee"):
+                        dm.referee = info["referee"]
+                        db.add(dm)
+                        refs += 1
                 except Exception:
-                    break
-                if info.get("referee"):
-                    dm.referee = info["referee"]
-                    db.add(dm)
-                    updated += 1
-                time.sleep(0.1)
-                break
+                    pass
+
+            # Stats por jugador (todos los jugadores con minutos, no solo goleadores)
+            try:
+                pdata = scraper.get_match_player_stats(g["event_id"], game=game)
+            except Exception:
+                pdata = {"teams": []}
+            for team in pdata.get("teams", []):
+                # team_id de NUESTRA BD segun local/visitante (los ids de 365 no coinciden)
+                db_team_id = dm.home_team_id if team.get("home_away") == "home" else dm.away_team_id
+                for p in team.get("players", []):
+                    bt = p.get("stats_by_type") or {}
+                    pc, pa = _stat_fraction(bt.get(_S_PASSC))
+                    db.add(models.PlayerMatchStat(
+                        match_id=dm.id,
+                        player_id=p.get("player_id"),
+                        player_name=p.get("name"),
+                        team_id=db_team_id,
+                        team_name=team.get("team_name"),
+                        season=season,
+                        starter=1 if p.get("starter") else 0,
+                        minutes=_stat_int(bt.get(_S_MIN)),
+                        goals=_stat_int(bt.get(_S_GOALS)) or 0,
+                        assists=_stat_int(bt.get(_S_ASSIST)) or 0,
+                        shots=_stat_int(bt.get(_S_SHOTS)),
+                        xg=_stat_float(bt.get(_S_XG)),
+                        xa=_stat_float(bt.get(_S_XA)),
+                        key_passes=_stat_int(bt.get(_S_KEYP)),
+                        touches=_stat_int(bt.get(_S_TOUCH)),
+                        passes_completed=pc,
+                        passes_attempted=pa,
+                        interceptions=_stat_int(bt.get(_S_INT)),
+                        rating=p.get("rating"),
+                        stats=p.get("stats") or None,
+                    ))
+                    rows += 1
+            time.sleep(0.1)
         db.commit()
-        logger.info(f"Arbitros asignados via 365Scores: {updated}")
+        logger.info(f"365 detalle: {refs} arbitros, {rows} filas de stats por jugador")
     except Exception as e:
         db.rollback()
-        logger.warning(f"Sync de arbitros fallo (no critico): {e}")
+        logger.warning(f"Sync de detalle 365 fallo (no critico): {e}")
 
 
 def _enrich_team_assets(db):
@@ -428,8 +510,8 @@ def run_sync(db, source: str = "espn"):
     # SofaScore event IDs (puede fallar por bloqueo de Cloudflare/403)
     _sync_sofascore_event_ids(db)
 
-    # Arbitros via 365Scores (ESPN no los expone)
-    _sync_referees(db)
+    # Detalle 365Scores: arbitros + stats completas por jugador (un request/partido)
+    _sync_365_match_details(db, str(current_year))
 
     # Detalle por partido: eventos (goles/tarjetas/cambios) y alineaciones.
     # Se enlaza por el id externo del partido (solo partidos jugados).

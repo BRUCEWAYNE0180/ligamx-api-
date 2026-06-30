@@ -153,3 +153,29 @@ class MatchLineupResponse(BaseModel):
     is_substitute: int = 0
     jersey_number: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+
+class PlayerMatchStatResponse(BaseModel):
+    id: int
+    match_id: Optional[int] = None
+    player_id: Optional[int] = None
+    player_name: Optional[str] = None
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+    season: Optional[str] = None
+    starter: int = 0
+    minutes: Optional[int] = None
+    goals: int = 0
+    assists: int = 0
+    shots: Optional[int] = None
+    xg: Optional[float] = None
+    xa: Optional[float] = None
+    key_passes: Optional[int] = None
+    touches: Optional[int] = None
+    passes_completed: Optional[int] = None
+    passes_attempted: Optional[int] = None
+    interceptions: Optional[int] = None
+    rating: Optional[float] = None
+    stats: Optional[dict] = None
+    model_config = ConfigDict(from_attributes=True)
