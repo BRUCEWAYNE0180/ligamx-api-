@@ -81,6 +81,31 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ---
 
+## 🛟 Kit de recuperación de la base (plan free)
+
+La base PostgreSQL del plan **free de Render caduca a los ~30 días**. Como esta
+API se usa por temporada, cuando caduque solo tienes que **crear una base nueva
+y correr un comando** para dejarla lista (verifica conexión → migra → sincroniza):
+
+```bash
+# 1) Crea una nueva base PostgreSQL free en Render y copia su "External URL"
+# 2) Apunta la app a ella (en Render: variable de entorno DATABASE_URL)
+# 3) Reinicializa todo en un solo comando:
+export DATABASE_URL="postgresql://usuario:pass@host/db"
+python scripts/recover.py
+```
+
+Opciones: `--source 365scores` (fuente alterna), `--skip-migrate` (si ya migraste).
+El script **no necesita `SYNC_API_KEY`** (llama al sync internamente). Al terminar
+imprime temporada, equipos, jugadores y partidos cargados. Verifica con
+`GET /sync/status` y `GET /standings`.
+
+> 💡 También puedes recrear los datos sin el script: deja el *Start Command* de
+> Render como `alembic upgrade head && uvicorn app.main:app ...` y luego haz un
+> `POST /sync` con tu `X-API-Key`. El script es el atajo de un solo paso.
+
+---
+
 ## 📚 Catálogo de endpoints
 
 > **Versionado:** todas las rutas están disponibles en la raíz (`/...`, por
