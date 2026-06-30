@@ -13,6 +13,22 @@ def _norm(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s or "") if unicodedata.category(c) != "Mn").lower()
 
 
+def _age_from_birthdate(birth_date):
+    """Edad en anios a partir de un ISO date string (ej '1997-03-02T08:00Z')."""
+    if not birth_date:
+        return None
+    from datetime import date, datetime as _dt
+    try:
+        d = _dt.fromisoformat(str(birth_date).replace("Z", "+00:00")).date()
+    except (ValueError, TypeError):
+        try:
+            d = _dt.strptime(str(birth_date)[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return None
+    today = date.today()
+    return today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+
+
 # Metricas agregables para la tabla de lideres de temporada (desde player_match_stats)
 _LEADER_AGG = {
     "goals": (func.sum(models.PlayerMatchStat.goals), "desc"),
@@ -429,7 +445,9 @@ def get_player_profile(player_id: int, season: str = Query(None), db: Session = 
         "player": {
             "id": player.id, "name": player.name, "position": player.position,
             "number": player.number, "nationality": player.nationality,
-            "photo_url": player.photo_url,
+            "flag_url": player.flag_url, "photo_url": player.photo_url,
+            "birth_date": player.birth_date, "age": _age_from_birthdate(player.birth_date),
+            "height": player.height, "weight": player.weight,
             "team": {"id": team.id, "name": team.name, "logo_url": team.logo_url} if team else None,
         },
         "season": label,

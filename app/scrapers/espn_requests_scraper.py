@@ -91,7 +91,9 @@ class ESPNRequestsScraper(BaseScraper):
                 print(f"⚠️ roster {tid}: {e}")
                 continue
             for ath in data.get("athletes", []):
-                players.append({"id":int(ath.get("id")) if ath.get("id") else None, "name":ath.get("displayName", ""), "team_name":team["name"], "position":(ath.get("position") or {}).get("abbreviation") or (ath.get("position") or {}).get("name"), "number":int(ath.get("jersey")) if ath.get("jersey") not in (None, "") else None, "nationality":(ath.get("country") or {}).get("name") if ath.get("country") else None, "birth_date":ath.get("dateOfBirth"), "photo_url":(ath.get("headshot") or {}).get("href") if ath.get("headshot") else None})
+                country = ath.get("country") or {}
+                nationality = ath.get("citizenship") or (country.get("name") if isinstance(country, dict) else None)
+                players.append({"id":int(ath.get("id")) if ath.get("id") else None, "name":ath.get("displayName", ""), "team_name":team["name"], "position":(ath.get("position") or {}).get("abbreviation") or (ath.get("position") or {}).get("name"), "number":int(ath.get("jersey")) if ath.get("jersey") not in (None, "") else None, "nationality":nationality, "birth_date":ath.get("dateOfBirth"), "photo_url":(ath.get("headshot") or {}).get("href") if ath.get("headshot") else None, "flag_url":(ath.get("flag") or {}).get("href") if ath.get("flag") else None, "height":ath.get("displayHeight"), "weight":ath.get("displayWeight")})
             time.sleep(0.15)
         return players
     def get_matches(self, season_id: int = None, tournament: str = None) -> List[Dict]:

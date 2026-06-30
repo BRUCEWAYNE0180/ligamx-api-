@@ -990,3 +990,66 @@ def test_stats_por_id_exacto(client, seeded, db):
 def test_sync_player_identity_requiere_api_key(client):
     assert client.post("/sync/player-identity").status_code == 422
     assert client.post("/sync/player-identity", headers={"X-API-Key": "wrong"}).status_code == 403
+
+
+
+# ---------- Bio enriquecida de jugadores ----------
+
+def test_player_bio_en_response(client, seeded, db):
+    from app import models
+    p = db.get(models.Player, 10)
+    p.nationality = "México"
+    p.flag_url = "https://a.espncdn.com/i/teamlogos/countries/500/mex.png"
+    p.height = "1.78 m"
+    p.weight = "75 kg"
+    p.birth_date = "1992-11-22T08:00Z"
+    db.commit()
+    r = client.get("/players/10").json()
+    assert r["nationality"] == "México"
+    assert r["flag_url"].endswith("mex.png")
+    assert r["height"] == "1.78 m" and r["weight"] == "75 kg"
+
+
+def test_player_profile_incluye_edad_y_bio(client, seeded, db):
+    _seed_player_match_stats(db)
+    from app import models
+    p = db.get(models.Player, 10)
+    p.birth_date = "1992-11-22T08:00Z"
+    p.flag_url = "http://flag/mex.png"
+    p.height = "1.78 m"
+    db.commit()
+    r = client.get("/players/10/profile").json()
+    assert r["player"]["age"] == 33  # nacido 1992-11-22, a fecha 2026
+    assert r["player"]["flag_url"] == "http://flag/mex.png"
+    assert r["player"]["height"] == "1.78 m"
+
+
+def test_age_from_birthdate():
+    from app.routers.players import _age_from_birthdate
+    assert _age_from_birthdate("1992-11-22T08:00Z") == 33
+    assert _age_from_birthdate("2007-09-05") == 18
+    assert _age_from_birthdate(None) is None
+    assert _age_from_birthdate("texto-invalido") is None
+
+
+def test_espn_scraper_nacionalidad_desde_citizenship():
+    # Regresión del bug: el roster de ESPN usa 'citizenship', no 'country'
+    from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
+    s = ESPNRequestsScraper()
+    s._teams = [{"id": 1, "name": "América"}]
+
+    def fake_get_json(url, params=None, retries=3):
+        return {"athletes": [{
+            "id": "555", "displayName": "Jugador Prueba", "jersey": "9",
+            "citizenship": "México", "dateOfBirth": "2000-01-01T08:00Z",
+            "flag": {"href": "http://flag/mex.png"},
+            "displayHeight": "1.80 m", "displayWeight": "76 kg",
+            "position": {"abbreviation": "DEL"},
+        }]}
+
+    s._get_json = fake_get_json
+    players = s.get_players()
+    p = players[0]
+    assert p["nationality"] == "México"
+    assert p["flag_url"] == "http://flag/mex.png"
+    assert p["height"] == "1.80 m" and p["weight"] == "76 kg"
