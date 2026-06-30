@@ -68,7 +68,7 @@ def seeded(db):
                              team_id=2, team_name="Chivas", description="Yellow Card", is_home=0))
     db.add(models.MatchLineup(match_id=1, player_id=10, player_name="Henry Martín", team_id=1,
                               team_name="América", position="FW", is_substitute=0, jersey_number=21))
-    db.add(models.MatchStat(team_id=1, team_name="América", event_id="ESP1", season="2026",
+    db.add(models.MatchStat(team_id=1, team_name="América", event_id="ESP1", season="Apertura 2026",
                             possession=58.0, shots=12, shots_on_target=5, yellow_cards=1, red_cards=0))
     db.commit()
     return db

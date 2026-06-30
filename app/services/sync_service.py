@@ -154,7 +154,7 @@ def _find_365_game(games, home, away, match_date):
     return None
 
 
-def _sync_365_match_details(db, season):
+def _sync_365_match_details(db, season, season_id=None):
     """En UNA sola pasada por 365Scores (un request por partido jugado), persiste:
       - el arbitro de cada partido (ESPN no lo expone), y
       - las estadisticas COMPLETAS por jugador (tabla player_match_stats).
@@ -170,7 +170,10 @@ def _sync_365_match_details(db, season):
         db.query(models.PlayerMatchStat).filter(models.PlayerMatchStat.season == season).delete()
         db.commit()
 
-        db_matches = db.query(models.Match).filter(models.Match.status == "finished").all()
+        q = db.query(models.Match).filter(models.Match.status == "finished")
+        if season_id is not None:
+            q = q.filter(models.Match.season_id == season_id)
+        db_matches = q.all()
         refs = rows = 0
         for dm in db_matches:
             home = dm.home_team.name if dm.home_team else None
@@ -337,6 +340,147 @@ def _sync_events_and_lineups(db, scraper, match_map: Dict[str, Dict], tmap: Dict
     logger.info(f"Persistidos {n_events} eventos y {n_lineups} jugadores en alineaciones")
 
 
+def _upsert_stadiums(db, stadiums):
+    """Crea o actualiza estadios por nombre (no se borran: son compartidos
+    entre temporadas)."""
+    smap = {}
+    for s in stadiums:
+        name = s.get("name")
+        if not name:
+            continue
+        st = db.query(models.Stadium).filter(models.Stadium.name == name).first()
+        if st is None:
+            st = models.Stadium(name=name)
+            db.add(st)
+        st.city = s.get("city") or st.city
+        if s.get("capacity"):
+            st.capacity = s["capacity"]
+        db.flush()
+        smap[name] = st.id
+    return smap
+
+
+def _upsert_teams(db, teams, smap):
+    """Crea o actualiza equipos por id. No se borran para no romper los partidos
+    de temporadas anteriores. Los campos enriquecidos (founded/logo) solo se
+    sobreescriben si llega un valor nuevo no vacio."""
+    tmap, team_stadium = {}, {}
+    for t in teams:
+        tm = db.get(models.Team, t["id"])
+        if tm is None:
+            tm = models.Team(id=t["id"])
+            db.add(tm)
+        tm.name = t["name"]
+        tm.short_name = t.get("short_name") or tm.short_name
+        tm.city = t.get("city") or tm.city
+        tm.colors = t.get("colors") or tm.colors
+        if t.get("founded"):
+            tm.founded = t["founded"]
+        if t.get("logo_url"):
+            tm.logo_url = t["logo_url"]
+        sid = smap.get(t.get("stadium_name"))
+        if sid:
+            tm.stadium_id = sid
+        db.flush()
+        tmap[t["name"]] = tm.id
+        tmap[t["id"]] = tm.id
+        team_stadium[tm.id] = tm.stadium_id
+    return tmap, team_stadium
+
+
+def _upsert_players(db, players, tmap):
+    """Crea o actualiza jugadores por id (compartidos entre temporadas)."""
+    for p in players:
+        if not p.get("id"):
+            continue
+        pl = db.get(models.Player, p["id"])
+        if pl is None:
+            pl = models.Player(id=p["id"])
+            db.add(pl)
+        pl.name = p["name"]
+        pl.position = p.get("position") or pl.position
+        if p.get("number") is not None:
+            pl.number = p["number"]
+        pl.nationality = p.get("nationality") or pl.nationality
+        pl.birth_date = p.get("birth_date") or pl.birth_date
+        pl.photo_url = p.get("photo_url") or pl.photo_url
+        tid = tmap.get(p.get("team_name"))
+        if tid:
+            pl.team_id = tid
+
+
+def _write_season_data(db, *, stadiums, teams, players, matches, standings, tournament, year):
+    """Escribe los datos de UNA temporada de forma NO destructiva para las demas:
+      - estadios/equipos/jugadores -> upsert (se actualizan, no se borran),
+      - partidos/tabla/stats de ESTA temporada -> se reemplazan (delete acotado
+        por temporada + insert).
+    Esto permite acumular varias temporadas (historico) en vez de pisarlas.
+    Devuelve (season, tmap, team_stadium, match_objs, season_label)."""
+    season_label = f"{tournament} {year}"
+
+    smap = _upsert_stadiums(db, stadiums)
+    tmap, team_stadium = _upsert_teams(db, teams, smap)
+    _upsert_players(db, players, tmap)
+
+    # Temporada: reutiliza la fila si ya existe (no la duplica en cada sync)
+    sn = db.query(models.Season).filter(models.Season.name == season_label).first()
+    if sn is None:
+        sn = models.Season(name=season_label, year=year, tournament_type=tournament)
+        db.add(sn)
+        db.flush()
+
+    # Reemplazo SOLO de esta temporada. Primero los hijos de los partidos viejos
+    # (tienen FK a matches), luego partidos y tabla, y por ultimo las stats por
+    # etiqueta de temporada. Las otras temporadas quedan intactas.
+    old_match_ids = [mid for (mid,) in db.query(models.Match.id).filter(models.Match.season_id == sn.id).all()]
+    if old_match_ids:
+        for child in (models.MatchEvent, models.MatchLineup, models.PlayerMatchStat):
+            db.query(child).filter(child.match_id.in_(old_match_ids)).delete(synchronize_session=False)
+    db.query(models.Match).filter(models.Match.season_id == sn.id).delete(synchronize_session=False)
+    db.query(models.Standing).filter(models.Standing.season_id == sn.id).delete(synchronize_session=False)
+    for m in (models.MatchStat, models.PlayerStat, models.TopScorer):
+        db.query(m).filter(m.season == season_label).delete(synchronize_session=False)
+    db.flush()
+
+    match_objs = []  # (Match, raw_dict) para enlazar eventos/alineaciones luego
+    for m in matches:
+        hid = tmap.get(m.get("home_team_id")) or tmap.get(m.get("home_team"))
+        aid = tmap.get(m.get("away_team_id")) or tmap.get(m.get("away_team"))
+        if hid and aid:
+            eid = m.get("event_id")
+            mo = models.Match(
+                season_id=sn.id,
+                home_team_id=hid,
+                away_team_id=aid,
+                stadium_id=team_stadium.get(hid),
+                match_date=m.get("match_date"),
+                home_score=m.get("home_score"),
+                away_score=m.get("away_score"),
+                status=m.get("status", "scheduled"),
+                week_number=m.get("week"),
+                external_event_id=str(eid) if eid is not None else None,
+            )
+            db.add(mo)
+            match_objs.append((mo, m))
+
+    for s in standings:
+        db.add(models.Standing(
+            season_id=sn.id,
+            team_id=tmap.get(s.get("team_name")),
+            position=s["position"],
+            played=s["played"],
+            won=s["won"],
+            drawn=s["drawn"],
+            lost=s["lost"],
+            goals_for=s["goals_for"],
+            goals_against=s["goals_against"],
+            goal_difference=s["goals_for"] - s["goals_against"],
+            points=s["points"],
+        ))
+
+    return sn, tmap, team_stadium, match_objs, season_label
+
+
 def run_sync(db, source: str = "espn"):
     """Ejecuta la sincronizacion completa de datos.
 
@@ -379,116 +523,18 @@ def run_sync(db, source: str = "espn"):
     # Red de seguridad: aborta (sin tocar la BD) si no es el torneo/ano esperado.
     _validate_season(tournament, current_year)
 
-    # -------- FASE 2: WRITE (una sola transaccion) --------
+    # -------- FASE 2: WRITE (una sola transaccion, NO destructiva entre temporadas) --------
     try:
-        # Limpiar tablas core.
-        # IMPORTANTE: se borran primero las tablas HIJAS (con FK) y luego las
-        # PADRES, para no violar claves foraneas en Postgres. El bulk delete
-        # de SQLAlchemy NO dispara el cascade del ORM, asi que el orden importa.
-        for m in [
-            models.MatchEvent,
-            models.MatchLineup,
-            models.MatchStat,
-            models.PlayerStat,
-            models.Standing,
-            models.Match,
-            models.Player,
-            models.Team,
-            models.Stadium,
-            models.Season,
-        ]:
-            db.query(m).delete()
-
-        # Estadios
-        smap = {}
-        for s in raw_stadiums:
-            st = models.Stadium(**s)
-            db.add(st)
-            db.flush()
-            smap[s["name"]] = st.id
-
-        # Equipos
-        tmap = {}
-        team_stadium = {}  # team_id -> stadium_id (para enlazar la sede de cada partido)
-        team_count = 0
-        for t in raw_teams:
-            tm = models.Team(
-                id=t["id"],
-                name=t["name"],
-                short_name=t.get("short_name"),
-                city=t.get("city"),
-                colors=t.get("colors"),
-                founded=t.get("founded"),
-                logo_url=t.get("logo_url"),
-                stadium_id=smap.get(t.get("stadium_name")),
-            )
-            db.add(tm)
-            db.flush()
-            tmap[t["name"]] = tm.id
-            tmap[t["id"]] = tm.id
-            team_stadium[tm.id] = tm.stadium_id
-            team_count += 1
-
-        # Jugadores
-        for p in raw_players:
-            db.add(
-                models.Player(
-                    id=p["id"],
-                    name=p["name"],
-                    position=p.get("position"),
-                    number=p.get("number"),
-                    nationality=p.get("nationality"),
-                    birth_date=p.get("birth_date"),
-                    photo_url=p.get("photo_url"),
-                    team_id=tmap.get(p.get("team_name")),
-                )
-            )
-
-        # Temporada (etiquetada por torneo: p. ej. "Apertura 2026")
-        sn = models.Season(name=f"{tournament} {current_year}", year=current_year, tournament_type=tournament)
-        db.add(sn)
-        db.flush()
-
-        # Partidos
-        match_objs = []  # (Match, raw_dict) para enlazar eventos/alineaciones luego
-        for m in raw_matches:
-            hid = tmap.get(m.get("home_team_id")) or tmap.get(m.get("home_team"))
-            aid = tmap.get(m.get("away_team_id")) or tmap.get(m.get("away_team"))
-            if hid and aid:
-                eid = m.get("event_id")
-                mo = models.Match(
-                    season_id=sn.id,
-                    home_team_id=hid,
-                    away_team_id=aid,
-                    stadium_id=team_stadium.get(hid),
-                    match_date=m.get("match_date"),
-                    home_score=m.get("home_score"),
-                    away_score=m.get("away_score"),
-                    status=m.get("status", "scheduled"),
-                    week_number=m.get("week"),
-                    external_event_id=str(eid) if eid is not None else None,
-                )
-                db.add(mo)
-                match_objs.append((mo, m))
-
-        # Standings
-        for s in raw_standings:
-            db.add(
-                models.Standing(
-                    season_id=sn.id,
-                    team_id=tmap.get(s.get("team_name")),
-                    position=s["position"],
-                    played=s["played"],
-                    won=s["won"],
-                    drawn=s["drawn"],
-                    lost=s["lost"],
-                    goals_for=s["goals_for"],
-                    goals_against=s["goals_against"],
-                    goal_difference=s["goals_for"] - s["goals_against"],
-                    points=s["points"],
-                )
-            )
-
+        sn, tmap, team_stadium, match_objs, season_label = _write_season_data(
+            db,
+            stadiums=raw_stadiums,
+            teams=raw_teams,
+            players=raw_players,
+            matches=raw_matches,
+            standings=raw_standings,
+            tournament=tournament,
+            year=current_year,
+        )
         db.commit()
     except Exception as e:
         db.rollback()
@@ -500,9 +546,9 @@ def run_sync(db, source: str = "espn"):
     # Escudos, fundacion y capacidad via TheSportsDB (cruce por idESPN)
     _enrich_team_assets(db)
 
-    # Stats avanzados
+    # Stats avanzados (clave de temporada = etiqueta completa, p. ej. "Apertura 2026")
     try:
-        sync_all_stats(db, raw_matches, scraper, tmap, str(current_year))
+        sync_all_stats(db, raw_matches, scraper, tmap, season_label)
     except Exception as e:
         db.rollback()
         logger.warning(f"sync_all_stats fallo (no critico): {e}")
@@ -511,7 +557,7 @@ def run_sync(db, source: str = "espn"):
     _sync_sofascore_event_ids(db)
 
     # Detalle 365Scores: arbitros + stats completas por jugador (un request/partido)
-    _sync_365_match_details(db, str(current_year))
+    _sync_365_match_details(db, season_label, sn.id)
 
     # Detalle por partido: eventos (goles/tarjetas/cambios) y alineaciones.
     # Se enlaza por el id externo del partido (solo partidos jugados).
@@ -543,11 +589,11 @@ def run_sync(db, source: str = "espn"):
     logger.info("Sincronizacion completada")
 
     return {
-        "stadiums": len(smap),
-        "teams": team_count,
+        "stadiums": len(raw_stadiums),
+        "teams": len(raw_teams),
         "players": len(db.query(models.Player).all()),
-        "matches": len(db.query(models.Match).all()),
-        "season": f"{tournament} {current_year}",
+        "matches": db.query(models.Match).filter(models.Match.season_id == sn.id).count(),
+        "season": season_label,
     }
 
 

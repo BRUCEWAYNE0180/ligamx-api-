@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
-from app.dependencies import get_or_404
+from app.dependencies import get_or_404, resolve_season_id
 from app import models, schemas
 from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
 from app.scrapers.sofascore_scraper import get_match_details
@@ -11,8 +11,10 @@ from app.cache import cached
 router = APIRouter()
 
 @router.get("/matches", response_model=list[schemas.MatchResponse])
-def get_matches(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), team_id: int = Query(None), week: int = Query(None), status: str = Query(None), db: Session = Depends(get_db)):
+def get_matches(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), team_id: int = Query(None), week: int = Query(None), status: str = Query(None), season: str = Query(None, description="Etiqueta o ano; por defecto todas las temporadas"), db: Session = Depends(get_db)):
     q = db.query(models.Match).options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+    if season:
+        q = q.filter(models.Match.season_id == resolve_season_id(db, season))
     if team_id:
         q = q.filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id))
     if week:
