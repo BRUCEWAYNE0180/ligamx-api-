@@ -12,7 +12,11 @@ from app.database import engine, Base
 from app import models
 from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras
 
-Base.metadata.create_all(bind=engine)
+# En desarrollo (SQLite) creamos las tablas automaticamente para arrancar sin
+# pasos extra. En produccion (PostgreSQL) el esquema lo gestiona Alembic
+# (`alembic upgrade head`), que SI maneja cambios de columnas/migraciones.
+if engine.dialect.name == "sqlite":
+    Base.metadata.create_all(bind=engine)
 
 scheduler = BackgroundScheduler()
 

@@ -26,6 +26,12 @@ def teams():
     return Scores365Scraper().get_teams()
 
 
+@router.get("/matches/{game_id}/info")
+def info(game_id: int):
+    """Ficha del partido: sede, arbitro/cuerpo arbitral, marcador y estado."""
+    return Scores365Scraper().get_match_info(game_id)
+
+
 @router.get("/matches/{game_id}/lineups")
 def lineups(game_id: int):
     return Scores365Scraper().get_match_lineups(game_id)

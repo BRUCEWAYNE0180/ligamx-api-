@@ -1,9 +1,9 @@
 """Fuentes complementarias ("joyitas") para enriquecer la API de Liga MX.
 
-- Scorebat: highlights en video de los partidos (gratis, sin key).
-- TheSportsDB: escudos, jerseys, estadios, apodos y descripciones en espanol.
-  Trae el campo idESPN, que coincide con los IDs de equipo de ESPN usados en
-  el resto del proyecto, lo que permite unir ambas fuentes sin friccion.
+- TheSportsDB: escudos, jerseys, estadios, apodos y descripciones en espanol,
+  ademas de highlights en VIDEO y miniaturas de los partidos (resultados y
+  proximos). Trae el campo idESPN, que coincide con los IDs de equipo de ESPN.
+- Scorebat: highlights en video (fallback; su API v3 quedo deprecada).
 """
 import logging
 from typing import Dict, List
@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 SCOREBAT_URL = "https://www.scorebat.com/video-api/v3/"
 THESPORTSDB_KEY = "3"  # key publica gratuita
-THESPORTSDB_TEAMS = f"https://www.thesportsdb.com/api/v1/json/{THESPORTSDB_KEY}/search_all_teams.php"
+THESPORTSDB_BASE = f"https://www.thesportsdb.com/api/v1/json/{THESPORTSDB_KEY}"
+THESPORTSDB_TEAMS = f"{THESPORTSDB_BASE}/search_all_teams.php"
+LIGA_MX_LEAGUE_ID = 4350  # "Mexican Primera League" en TheSportsDB
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
@@ -25,8 +27,34 @@ def _get_json(url: str, params: Dict = None) -> Dict:
     return r.json()
 
 
-def get_highlights() -> List[Dict]:
-    """Highlights en video de Liga MX desde Scorebat."""
+def _event_to_dict(e: Dict) -> Dict:
+    def _score(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    return {
+        "event_id": e.get("idEvent"),
+        "title": e.get("strEvent"),
+        "round": e.get("intRound"),
+        "season": e.get("strSeason"),
+        "home_team": e.get("strHomeTeam"),
+        "away_team": e.get("strAwayTeam"),
+        "home_score": _score(e.get("intHomeScore")),
+        "away_score": _score(e.get("intAwayScore")),
+        "date": e.get("dateEvent"),
+        "time": e.get("strTime"),
+        "timestamp": e.get("strTimestamp"),
+        "venue": e.get("strVenue"),
+        "status": e.get("strStatus"),
+        "thumbnail": e.get("strThumb"),
+        "video": e.get("strVideo") or None,
+        "poster": e.get("strPoster") or None,
+    }
+
+
+def _scorebat_highlights() -> List[Dict]:
+    """Fallback: highlights de Liga MX desde Scorebat (API deprecada)."""
     try:
         data = _get_json(SCOREBAT_URL)
     except Exception as e:
@@ -40,14 +68,45 @@ def get_highlights() -> List[Dict]:
         out.append({
             "title": item.get("title"),
             "competition": item.get("competition"),
-            "home_team": item.get("homeTeam", {}).get("name") if isinstance(item.get("homeTeam"), dict) else item.get("homeTeam"),
-            "away_team": item.get("awayTeam", {}).get("name") if isinstance(item.get("awayTeam"), dict) else item.get("awayTeam"),
             "date": item.get("date"),
             "thumbnail": item.get("thumbnail"),
-            "match_url": item.get("matchviewUrl"),
-            "videos": [{"title": v.get("title"), "embed": v.get("embed")} for v in item.get("videos", [])],
+            "video": item.get("matchviewUrl"),
+            "source": "scorebat",
         })
     return out
+
+
+def get_highlights() -> List[Dict]:
+    """Highlights en video + miniaturas de los ultimos partidos de Liga MX.
+
+    Fuente principal: TheSportsDB (resultados recientes con strVideo/strThumb).
+    Si no hay videos disponibles, cae a Scorebat como respaldo.
+    """
+    results = []
+    try:
+        data = _get_json(f"{THESPORTSDB_BASE}/eventspastleague.php", {"id": LIGA_MX_LEAGUE_ID})
+        for e in data.get("events") or []:
+            d = _event_to_dict(e)
+            if d.get("video") or d.get("thumbnail"):
+                d["source"] = "thesportsdb"
+                results.append(d)
+    except Exception as e:
+        logger.warning(f"TheSportsDB highlights fallo: {e}")
+
+    if not results:
+        return _scorebat_highlights()
+    return results
+
+
+def get_upcoming_events() -> List[Dict]:
+    """Calendario de los proximos partidos de Liga MX con miniatura, sede y
+    horario (TheSportsDB). Joyita visual para apps de aficionados."""
+    try:
+        data = _get_json(f"{THESPORTSDB_BASE}/eventsnextleague.php", {"id": LIGA_MX_LEAGUE_ID})
+    except Exception as e:
+        logger.warning(f"TheSportsDB proximos fallo: {e}")
+        return []
+    return [_event_to_dict(e) for e in (data.get("events") or [])]
 
 
 def get_team_assets() -> List[Dict]:

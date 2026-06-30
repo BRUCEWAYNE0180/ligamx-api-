@@ -7,8 +7,16 @@ router = APIRouter(prefix="/extras", tags=["extras"])
 
 @router.get("/highlights")
 def highlights():
-    """Highlights en video de Liga MX (Scorebat)."""
+    """Highlights en video + miniaturas de los ultimos partidos (TheSportsDB,
+    con Scorebat como respaldo)."""
     return extras_scraper.get_highlights()
+
+
+@router.get("/calendar")
+def calendar():
+    """Calendario de los proximos partidos de Liga MX con miniatura, sede y
+    horario (TheSportsDB)."""
+    return extras_scraper.get_upcoming_events()
 
 
 @router.get("/teams/assets")

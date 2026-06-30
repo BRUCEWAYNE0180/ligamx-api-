@@ -13,7 +13,7 @@ estadísticas, alineaciones, eventos en vivo, noticias y más.
 |--------|-----|--------|
 | **ESPN** (`site.api.espn.com`) | Equipos, escudos, plantillas, estadios, partidos, tabla, goleadores y estadísticas | ✅ Fuente principal del sync |
 | **365Scores** (`webws.365scores.com`) | Fixtures/resultados frescos del Apertura, tabla, alineaciones con posiciones, eventos (goles/tarjetas/cambios) | ✅ Datos en vivo, no bloqueado |
-| **TheSportsDB** | Año de fundación, capacidad de estadios, escudos/jerseys (cruce por `idESPN`) | ✅ Enriquecimiento |
+| **TheSportsDB** | Año de fundación, capacidad de estadios, escudos/jerseys (cruce por `idESPN`), **highlights en video + miniaturas** y calendario | ✅ Enriquecimiento + media |
 | **Google Noticias / ESPN (RSS)** | Noticias de Liga MX en español | ✅ Vía `feedparser` |
 | **SofaScore** | Detalle de partidos / incidencias | ⚠️ Bloqueado por Cloudflare (403) desde servidores; endpoints quedan como *best-effort* |
 
@@ -51,6 +51,27 @@ Fuentes válidas para `source`: `espn` (recomendada), `365scores`, `demo` (datos
 | `RUN_SCHEDULER` | Si `true`, el web service corre el sync cada 6h | `false` |
 
 > El esquema `postgres://` se normaliza automáticamente a `postgresql://`.
+
+---
+
+## 🧬 Migraciones de base de datos (Alembic)
+
+El esquema de la base de datos se gestiona con **Alembic**.
+
+```bash
+# Aplicar todas las migraciones (crea/actualiza tablas)
+alembic upgrade head
+
+# Tras cambiar los modelos en app/models.py, generar una migración nueva
+alembic revision --autogenerate -m "describe el cambio"
+```
+
+- En **desarrollo con SQLite**, la app crea las tablas automáticamente al
+  arrancar (no necesitas correr Alembic).
+- En **producción con PostgreSQL**, el esquema lo maneja Alembic. El despliegue
+  en Render ejecuta `alembic upgrade head` antes de iniciar, y el workflow de
+  sincronización también lo corre antes de cargar datos. Esto resuelve el
+  *drift* de esquema: las columnas/tablas nuevas se aplican a bases existentes.
 
 ---
 
@@ -101,12 +122,14 @@ Fuentes válidas para `source`: `espn` (recomendada), `365scores`, `demo` (datos
 - `GET /365scores/matches?week=&status=` — fixtures/resultados frescos
 - `GET /365scores/standings` — tabla
 - `GET /365scores/teams` — equipos
+- `GET /365scores/matches/{game_id}/info` — **ficha del partido: sede, árbitro y cuerpo arbitral** 🆕
 - `GET /365scores/matches/{game_id}/lineups` — alineaciones con posiciones
 - `GET /365scores/matches/{game_id}/events` — eventos
 - `GET /365scores/matches/{game_id}/cards` — tarjetas
 
 ### Extras
-- `GET /extras/highlights` — highlights en video (Scorebat)
+- `GET /extras/highlights` — highlights en **video + miniaturas** de los últimos partidos (TheSportsDB, con Scorebat de respaldo)
+- `GET /extras/calendar` — **próximos partidos** con miniatura, sede y horario (TheSportsDB) 🆕
 - `GET /extras/teams/assets` — escudos/jerseys/estadios (TheSportsDB)
 - `GET /extras/teams/{espn_team_id}/assets` — assets de un equipo
 
@@ -152,6 +175,8 @@ app/
 ├── scrapers/          # Un scraper por fuente (patrón BaseScraper + factory)
 └── services/
     └── sync_service.py  # Orquestación del sync (FETCH → WRITE → ENRICH)
+alembic/                 # Migraciones de base de datos
+└── versions/            # Scripts de migración generados
 ```
 
 El **sync** es seguro por diseño: primero descarga todo a memoria (FETCH); si una

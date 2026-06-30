@@ -3,7 +3,7 @@ services:
     name: ligamx-api
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port 10000"
+    startCommand: "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 10000"
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.10"

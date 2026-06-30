@@ -2,7 +2,10 @@ from app.database import engine, Base, SessionLocal
 from app.services.sync_service import run_sync
 from app import models
 
-Base.metadata.create_all(bind=engine)
+# En SQLite (dev) creamos tablas al vuelo; en Postgres el esquema lo maneja
+# Alembic (corre `alembic upgrade head` antes de este script en produccion).
+if engine.dialect.name == "sqlite":
+    Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
