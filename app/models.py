@@ -66,11 +66,14 @@ class Match(Base):
     home_score = Column(Integer, nullable=True)
     away_score = Column(Integer, nullable=True)
     status = Column(String, default="scheduled")
+    sofascore_event_id = Column(Integer, nullable=True, index=True)
     
     season = relationship("Season", back_populates="matches")
     week = relationship("Week", back_populates="matches")
     home_team = relationship("Team", foreign_keys=[home_team_id], back_populates="home_matches")
     away_team = relationship("Team", foreign_keys=[away_team_id], back_populates="away_matches")
+    match_events = relationship("MatchEvent", back_populates="match", cascade="all, delete-orphan")
+    match_lineups = relationship("MatchLineup", back_populates="match", cascade="all, delete-orphan")
 
 class Player(Base):
     __tablename__ = "players"
@@ -159,3 +162,37 @@ class PlayerStat(Base):
     matches_played = Column(Integer, default=0)
     player = relationship("Player", backref="stats")
     team = relationship("Team")
+
+
+class MatchEvent(Base):
+    __tablename__ = "match_events"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=True)
+    sofascore_event_id = Column(Integer, nullable=True)
+    event_type = Column(String)
+    event_time = Column(Integer, nullable=True)
+    player_name = Column(String, nullable=True)
+    player_id = Column(Integer, nullable=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    team_name = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    is_home = Column(Integer, nullable=True)
+    
+    match = relationship("Match", back_populates="match_events")
+
+class MatchLineup(Base):
+    __tablename__ = "match_lineups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=True)
+    sofascore_event_id = Column(Integer, nullable=True)
+    player_id = Column(Integer, nullable=True)
+    player_name = Column(String, nullable=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    team_name = Column(String, nullable=True)
+    position = Column(String, nullable=True)
+    is_substitute = Column(Integer, default=0)
+    jersey_number = Column(Integer, nullable=True)
+    
+    match = relationship("Match", back_populates="match_lineups")

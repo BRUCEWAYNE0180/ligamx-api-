@@ -4,10 +4,12 @@ from typing import List, Dict, Any
 from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
 from app.scrapers.sync_all_stats import sync_all_stats
-
+from app.scrapers.sofascore_scraper import get_events as get_sofascore_events
 from app import models
 
-def calculate_week_numbers(matches):
+logger = logging.getLogger(__name__)
+
+def calculate_week_numbers(matches: List[Dict[str, Any]]):
     """Asigna numeros de jornada basandose en la fecha.
     La jornada de Liga MX va de viernes a jueves."""
     matches_with_date = [m for m in matches if m.get("match_date")]
@@ -15,7 +17,6 @@ def calculate_week_numbers(matches):
         return
 
     def week_start(date):
-        # Viernes=4; la jornada empieza viernes y termina jueves
         days_since_friday = (date.weekday() - 4) % 7
         return (date - timedelta(days=days_since_friday)).date()
 
@@ -33,12 +34,51 @@ def calculate_week_numbers(matches):
         ws = week_start(m["match_date"])
         m["week"] = week_number_by_start[ws]
 
-logger = logging.getLogger(__name__)
+def _teams_match(name1: str, name2: str) -> bool:
+    """Compara nombres de equipos de ESPN y SofaScore."""
+    if not name1 or not name2:
+        return False
+    n1 = name1.lower().replace("fc", "").replace("cf", "").replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").replace("ü", "u").strip()
+    n2 = name2.lower().replace("fc", "").replace("cf", "").replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").replace("ü", "u").strip()
+    return n1 in n2 or n2 in n1 or n1.split()[0] in n2 or n2.split()[0] in n1
+
+def _sync_sofascore_event_ids(db):
+    """Busca y guarda sofascore_event_id para cada partido."""
+    try:
+        sofascore_events = get_sofascore_events()
+        logger.info(f"SofaScore events found: {len(sofascore_events)}")
+        
+        matches = db.query(models.Match).all()
+        updated = 0
+        
+        for match in matches:
+            home_team = match.home_team.name if match.home_team else None
+            away_team = match.away_team.name if match.away_team else None
+            
+            if not home_team or not away_team:
+                continue
+            
+            for event in sofascore_events:
+                event_home = event.get("homeTeam", {}).get("name", "")
+                event_away = event.get("awayTeam", {}).get("name", "")
+                
+                if _teams_match(home_team, event_home) and _teams_match(away_team, event_away):
+                    match.sofascore_event_id = event.get("id")
+                    db.add(match)
+                    updated += 1
+                    break
+        
+        db.commit()
+        logger.info(f"SofaScore event IDs updated: {updated}")
+    except Exception as e:
+        logger.warning(f"SofaScore event ID sync failed: {e}")
 
 def run_sync(db, source: str = "espn"):
+    """Ejecuta la sincronizacion completa de datos."""
     logger.info(f"Iniciando sincronizacion desde {source}")
     scraper = get_scraper(source)
 
+    # Limpiar tablas core
     for m in [
         models.Standing,
         models.MatchStat,
@@ -49,10 +89,13 @@ def run_sync(db, source: str = "espn"):
         models.Team,
         models.Stadium,
         models.Season,
+        models.MatchEvent,
+        models.MatchLineup,
     ]:
         db.query(m).delete()
     db.commit()
 
+    # Estadios
     smap = {}
     for s in scraper.get_stadiums():
         st = models.Stadium(**s)
@@ -60,6 +103,7 @@ def run_sync(db, source: str = "espn"):
         db.flush()
         smap[s["name"]] = st.id
 
+    # Equipos
     tmap = {}
     team_count = 0
     for t in scraper.get_teams():
@@ -78,6 +122,7 @@ def run_sync(db, source: str = "espn"):
         tmap[t["id"]] = tm.id
         team_count += 1
 
+    # Jugadores
     for p in scraper.get_players():
         db.add(
             models.Player(
@@ -92,11 +137,13 @@ def run_sync(db, source: str = "espn"):
             )
         )
 
+    # Temporada
     current_year = datetime.now().year
     sn = models.Season(name=str(current_year), year=current_year, tournament_type="Liga MX")
     db.add(sn)
     db.flush()
 
+    # Partidos
     matches = scraper.get_matches()
     calculate_week_numbers(matches)
 
@@ -117,6 +164,7 @@ def run_sync(db, source: str = "espn"):
                 )
             )
 
+    # Standings
     for s in scraper.get_standings():
         db.add(
             models.Standing(
@@ -136,15 +184,19 @@ def run_sync(db, source: str = "espn"):
 
     db.commit()
 
+    # Stats avanzados
     sync_all_stats(db, matches, scraper, tmap, str(current_year))
 
-    logger.info("Sincronizacion completada")
+    # SofaScore event IDs
+    _sync_sofascore_event_ids(db)
 
     # News sync
     db.query(models.News).delete()
     for n in fetch_news(limit=50):
         db.add(models.News(**n))
     db.commit()
+
+    logger.info("Sincronizacion completada")
 
     return {
         "stadiums": len(smap),

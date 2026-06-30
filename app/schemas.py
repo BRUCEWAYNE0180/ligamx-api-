@@ -46,6 +46,7 @@ class MatchBase(BaseModel):
     away_score: Optional[int] = None
     status: str = "scheduled"
     week_number: Optional[int] = None
+    sofascore_event_id: Optional[int] = None
 
 class MatchResponse(MatchBase):
     id: int
@@ -121,5 +122,31 @@ class PlayerStatResponse(BaseModel):
     yellow_cards: int
     red_cards: int
     matches_played: int
+    class Config:
+        from_attributes = True
+
+
+class MatchEventResponse(BaseModel):
+    id: int
+    event_type: str
+    event_time: Optional[int] = None
+    player_name: Optional[str] = None
+    player_id: Optional[int] = None
+    team_name: Optional[str] = None
+    team_id: Optional[int] = None
+    description: Optional[str] = None
+    is_home: Optional[int] = None
+    class Config:
+        from_attributes = True
+
+class MatchLineupResponse(BaseModel):
+    id: int
+    player_name: Optional[str] = None
+    player_id: Optional[int] = None
+    team_name: Optional[str] = None
+    team_id: Optional[int] = None
+    position: Optional[str] = None
+    is_substitute: int = 0
+    jersey_number: Optional[int] = None
     class Config:
         from_attributes = True

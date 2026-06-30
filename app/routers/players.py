@@ -6,6 +6,10 @@ from app import models, schemas
 
 router = APIRouter()
 
+@router.get("/players/top", response_model=list[schemas.PlayerStatResponse])
+def get_top_players(limit: int = Query(10, ge=1, le=100), season: str = Query("2026"), db: Session = Depends(get_db)):
+    return db.query(models.PlayerStat).filter(models.PlayerStat.season == season).order_by(models.PlayerStat.goals.desc()).limit(limit).all()
+
 @router.get("/players", response_model=list[schemas.PlayerResponse])
 def get_players(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     return db.query(models.Player).offset(offset).limit(limit).all()
