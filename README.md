@@ -123,6 +123,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/{id}/events` — eventos clave (goles/tarjetas/cambios)
 - `GET /matches/{id}/cards` — solo tarjetas
 - `GET /matches/{id}/player-stats` — **stats completas por jugador del partido, guardadas en BD** (minutos, goles, xG, xA, pases, regates, rating...) 🆕
+- `GET /matches/{id}/players-to-watch?limit=` — **jugadores a seguir**: los más destacados de cada equipo según su forma (goles, asistencias, xG, rating) con motivo explicable 🆕
 - `GET /matches/live` — partidos en vivo (hoy)
 - `GET /matches/today?date=YYYY-MM-DD` — partidos de un día
 - `GET /h2h/{team1}/{team2}` — historial entre dos equipos
