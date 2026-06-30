@@ -87,6 +87,21 @@ def news(limit: int = Query(30, ge=1, le=100)):
     return Scores365Scraper().get_news(limit)
 
 
+@router.get("/goalkeepers")
+@cached(600)
+def goalkeepers():
+    """Tabla de porteros de la temporada: vallas invictas, goles recibidos,
+    salvadas y penales atajados (ordenada por vallas invictas)."""
+    return Scores365Scraper().get_goalkeepers()
+
+
+@router.get("/matches/{game_id}/heatmaps")
+@cached(300)
+def match_heatmaps(game_id: int):
+    """Mapas de calor por jugador del partido (URL de imagen lista para mostrar)."""
+    return Scores365Scraper().get_match_heatmaps(game_id)
+
+
 @router.get("/matches/{game_id}/shots")
 @cached(120)
 def match_shots(game_id: int):

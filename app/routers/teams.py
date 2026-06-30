@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from datetime import datetime
 import re
 import unicodedata
@@ -28,6 +29,35 @@ def search_teams(q: str, db: Session = Depends(get_db)):
         return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
     query = norm(q)
     return [t for t in db.query(models.Team).all() if query in norm(t.name)]
+
+
+@router.get("/teams/xg-performance")
+def teams_xg_performance(
+    season: str = Query(None),
+    order: str = Query("over", description="'over' = más goles que su xG primero; 'under' = al revés"),
+    db: Session = Depends(get_db),
+):
+    """Rendimiento goles vs xG por EQUIPO en la temporada (suma de los xG de los
+    tiros de sus jugadores, desde player_match_stats). Muestra qué equipos son
+    más efectivos (goles > xG) o desperdician (goles < xG)."""
+    label = resolve_season_label(db, season)
+    M = models.PlayerMatchStat
+    rows = (
+        db.query(M.team_id, M.team_name, func.sum(M.goals).label("goals"), func.sum(M.xg).label("xg"))
+        .filter(M.season == label)
+        .group_by(M.team_id, M.team_name)
+        .all()
+    )
+    out = []
+    for team_id, team_name, goals, xg in rows:
+        g = int(goals or 0)
+        x = round(float(xg or 0), 2)
+        out.append({"team_id": team_id, "team": team_name, "goals": g, "xg": x, "diff": round(g - x, 2)})
+    out.sort(key=lambda r: r["diff"], reverse=(order != "under"))
+    for i, r in enumerate(out):
+        r["rank"] = i + 1
+    return out
+
 
 @router.get("/teams/{team_id}", response_model=schemas.TeamResponse)
 def get_team(team_id: int, db: Session = Depends(get_db)):

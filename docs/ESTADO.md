@@ -88,6 +88,9 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- xG por **equipo** (`/teams/xg-performance`), **tabla de porteros**
+  (`/365scores/goalkeepers`) y **heatmaps por jugador**
+  (`/365scores/matches/{id}/heatmaps`).
 - Noticias **unificadas** en `/news`: RSS (Google/ESPN) + feed propio de 365Scores,
   con miniatura (`image_url`). (Nota: el scraping de Flashscore se retiró hace
   tiempo por frágil/pesado; se reemplazó por RSS.)

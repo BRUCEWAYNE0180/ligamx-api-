@@ -622,3 +622,36 @@ def test_news_incluye_imagen(client, db):
     assert r[0]["title"] == "Gol de último minuto"
     assert r[0]["image_url"] == "http://img/portada.webp"
     assert r[0]["source"] == "365Scores"
+
+
+
+# ---------- xG por equipo, porteros y heatmaps ----------
+
+def test_teams_xg_performance(client, seeded, db):
+    _seed_player_match_stats(db)  # Henry (equipo 1): goals=2, xg=1.2
+    r = client.get("/teams/xg-performance").json()
+    top = r[0]
+    assert top["team_id"] == 1
+    assert top["goals"] == 2 and top["xg"] == 1.2 and top["diff"] == 0.8
+    # no debe colisionar con /teams/{team_id}
+    assert client.get("/teams/xg-performance").status_code == 200
+
+
+def test_365_goalkeepers(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = [{"player_id": 1, "name": "Nahuel Guzmán", "team_id": 10,
+             "clean_sheets": "7", "goals_conceded": "8", "saves": "3.1", "penalties_saved": "1/2"}]
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_goalkeepers", lambda self: fake)
+    r = client.get("/365scores/goalkeepers").json()
+    assert r[0]["name"] == "Nahuel Guzmán" and r[0]["clean_sheets"] == "7"
+
+
+def test_365_heatmaps(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = {"game_id": 123, "teams": [{"team_name": "Pumas", "players": [
+        {"player_id": 1, "name": "Carrasquilla", "position": "Mediocampista",
+         "heatmap_url": "https://heatmap.365scores.com/?x=1"}]}]}
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_match_heatmaps",
+                        lambda self, game_id: fake)
+    r = client.get("/365scores/matches/123/heatmaps").json()
+    assert r["teams"][0]["players"][0]["heatmap_url"].startswith("https://heatmap")
