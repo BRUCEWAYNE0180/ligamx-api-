@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session, joinedload, joinedload
+from sqlalchemy.orm import Session, joinedload
+import unicodedata
 from app.database import get_db
 from app.dependencies import get_or_404
 from app import models, schemas
@@ -9,6 +10,13 @@ router = APIRouter()
 @router.get("/teams", response_model=list[schemas.TeamResponse])
 def get_teams(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     return db.query(models.Team).options(joinedload(models.Team.stadium)).offset(offset).limit(limit).all()
+
+@router.get("/teams/search", response_model=list[schemas.TeamResponse])
+def search_teams(q: str, db: Session = Depends(get_db)):
+    def norm(s):
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
+    query = norm(q)
+    return [t for t in db.query(models.Team).all() if query in norm(t.name)]
 
 @router.get("/teams/{team_id}", response_model=schemas.TeamResponse)
 def get_team(team_id: int, db: Session = Depends(get_db)):

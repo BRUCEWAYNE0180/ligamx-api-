@@ -10,6 +10,10 @@ router = APIRouter()
 def get_players(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     return db.query(models.Player).offset(offset).limit(limit).all()
 
+@router.get("/players/{player_id}", response_model=schemas.PlayerResponse)
+def get_player(player_id: int, db: Session = Depends(get_db)):
+    return get_or_404(db, models.Player, player_id)
+
 @router.get("/players/{player_id}/stats", response_model=schemas.PlayerStatResponse)
 def get_player_stat(player_id: int, db: Session = Depends(get_db), season: str = Query("2026")):
     stat = db.query(models.PlayerStat).filter(models.PlayerStat.player_id == player_id, models.PlayerStat.season == season).first()

@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from fastapi import HTTPException
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -36,6 +37,36 @@ def get_h2h(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
         ((models.Match.home_team_id == team1_id) & (models.Match.away_team_id == team2_id)) |
         ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))
     ).order_by(models.Match.match_date).all()
+
+@router.get("/matches/{match_id}", response_model=schemas.MatchResponse)
+def get_match(match_id: int, db: Session = Depends(get_db)):
+    return get_or_404(db, models.Match, match_id)
+
+@router.get("/weeks")
+def get_weeks(db: Session = Depends(get_db)):
+    weeks = db.query(models.Match.week_number).filter(models.Match.week_number != None).distinct().order_by(models.Match.week_number).all()
+    return [w[0] for w in weeks]
+
+@router.get("/weeks/current")
+def get_current_week(db: Session = Depends(get_db)):
+    today = datetime.now().date()
+    matches = db.query(models.Match).filter(models.Match.match_date != None).order_by(models.Match.match_date).all()
+    if not matches:
+        raise HTTPException(status_code=404, detail="No hay partidos")
+    def week_start(date):
+        days_since_friday = (date.weekday() - 4) % 7
+        return date - timedelta(days=days_since_friday)
+    today_week_start = week_start(today)
+    for m in matches:
+        mdate = m.match_date.date() if hasattr(m.match_date, "date") else m.match_date
+        if week_start(mdate) == today_week_start:
+            return {"week_number": m.week_number, "start_date": str(today_week_start)}
+    first_match = matches[0]
+    first_date = first_match.match_date.date() if hasattr(first_match.match_date, "date") else first_match.match_date
+    if today < first_date:
+        return {"week_number": first_match.week_number, "start_date": str(week_start(first_date)), "note": "Temporada aun no inicia"}
+    last_match = matches[-1]
+    return {"week_number": last_match.week_number, "note": "Temporada finalizada"}
 
 @router.get("/matches/live")
 def get_live_matches():
