@@ -655,3 +655,44 @@ def test_365_heatmaps(client, monkeypatch):
                         lambda self, game_id: fake)
     r = client.get("/365scores/matches/123/heatmaps").json()
     assert r["teams"][0]["players"][0]["heatmap_url"].startswith("https://heatmap")
+
+
+
+# ---------- Analítica: comparador y predictor ----------
+
+def test_compare_players(client, seeded, db):
+    from app import models
+    _seed_player_match_stats(db)
+    db.add(models.Player(id=11, team_id=2, name="Rival X"))
+    db.commit()
+    r = client.get("/compare/players", params={"a": 10, "b": 11}).json()
+    assert r["a"]["name"] == "Henry Martín" and r["a"]["goals"] == 2
+    assert r["a"]["xg"] == 1.2
+    assert r["b"]["name"] == "Rival X" and r["b"]["goals"] == 0
+
+
+def test_compare_teams(client, seeded, db):
+    _seed_player_match_stats(db)
+    r = client.get("/compare/teams", params={"a": 1, "b": 2}).json()
+    assert r["a"]["team_id"] == 1 and r["a"]["standing"]["position"] == 1
+    assert r["a"]["xg"] == 1.2
+    assert r["b"]["team_id"] == 2
+
+
+def test_predict_match(client, seeded):
+    r = client.get("/predict", params={"home": 1, "away": 2}).json()
+    p = r["probabilities"]
+    assert abs(p["home_win"] + p["draw"] + p["away_win"] - 1.0) < 0.05
+    assert "expected_goals" in r and "most_likely_score" in r
+    # equipo 1 (mejor ataque/defensa) y de local debe ser favorito
+    assert p["home_win"] > p["away_win"]
+
+
+def test_predict_sin_datos(client, db):
+    from app import models
+    db.add(models.Season(id=1, name="Apertura 2026", year=2026, tournament_type="Apertura"))
+    db.add(models.Team(id=1, name="A"))
+    db.add(models.Team(id=2, name="B"))
+    db.commit()
+    # sin standings con partidos jugados -> 400
+    assert client.get("/predict", params={"home": 1, "away": 2}).status_code == 400
