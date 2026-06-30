@@ -6,10 +6,14 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import subprocess
 
 from app.database import engine, Base
 from app import models
+from app.rate_limit import limiter
 from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search
 
 # En desarrollo (SQLite) creamos las tablas automaticamente para arrancar sin
@@ -30,6 +34,23 @@ if os.getenv("RUN_SCHEDULER", "false").lower() == "true":
     scheduler.start()
 
 app = FastAPI(title="Liga MX API", version="1.0")
+
+# Rate limiting por IP (slowapi). El limite por defecto aplica a todas las rutas;
+# los endpoints sensibles (sync) anaden un limite mas estricto.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Cabeceras de seguridad basicas para una API publica."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

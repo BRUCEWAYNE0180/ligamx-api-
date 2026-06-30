@@ -49,6 +49,9 @@ Fuentes válidas para `source`: `espn` (recomendada), `365scores`, `demo` (datos
 | `DATABASE_URL` | URL de la BD. SQLite local o PostgreSQL en producción | `sqlite:///./ligamx.db` |
 | `SYNC_API_KEY` | Clave requerida para `POST /sync` | — |
 | `RUN_SCHEDULER` | Si `true`, el web service corre el sync cada 6h | `false` |
+| `RATE_LIMIT_ENABLED` | Activa el rate limiting por IP | `true` |
+| `RATE_LIMIT_DEFAULT` | Límite global por IP | `200/minute` |
+| `RATE_LIMIT_SYNC` | Límite para `POST /sync` y `/sync/backfill` | `10/minute` |
 
 > El esquema `postgres://` se normaliza automáticamente a `postgresql://`.
 

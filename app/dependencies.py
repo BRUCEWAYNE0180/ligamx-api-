@@ -1,12 +1,20 @@
 import os
+import secrets
 from fastapi import Header, HTTPException
 from sqlalchemy import case
 from app import models
 
 
 def verify_api_key(api_key: str = Header(..., alias="X-API-Key")):
-    sync_api_key = os.environ.get("SYNC_API_KEY")
-    if api_key != sync_api_key:
+    """Valida la API key para operaciones sensibles (sync/backfill).
+    - 503 si el servidor no tiene SYNC_API_KEY configurada (error de operacion).
+    - 403 si la key no coincide. La comparacion es de tiempo constante para no
+      filtrar informacion por timing.
+    """
+    configured = os.environ.get("SYNC_API_KEY")
+    if not configured:
+        raise HTTPException(status_code=503, detail="SYNC_API_KEY no configurada en el servidor")
+    if not secrets.compare_digest(api_key, configured):
         raise HTTPException(status_code=403, detail="API Key invalida")
     return api_key
 
