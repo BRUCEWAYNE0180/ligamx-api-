@@ -42,6 +42,17 @@ def get_h2h(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
         ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))
     ).order_by(models.Match.match_date).all()
 
+@router.get("/matches/live")
+def get_live_matches():
+    scraper = ESPNRequestsScraper()
+    return scraper.get_live_matches()
+
+@router.get("/matches/today")
+def get_matches_today(date: str = Query(None)):
+    scraper = ESPNRequestsScraper()
+    date_str = date.replace("-", "") if date else datetime.now().strftime("%Y%m%d")
+    return scraper.get_matches_by_date(date_str)
+
 @router.get("/matches/{match_id}", response_model=schemas.MatchResponse)
 def get_match(match_id: int, db: Session = Depends(get_db)):
     return get_or_404(db, models.Match, match_id)
@@ -57,17 +68,6 @@ def get_match_sofascore(match_id: int, db: Session = Depends(get_db)):
 def get_match_stats(event_id: str):
     scraper = ESPNRequestsScraper()
     return scraper.get_match_stats(event_id)
-
-@router.get("/matches/live")
-def get_live_matches():
-    scraper = ESPNRequestsScraper()
-    return scraper.get_live_matches()
-
-@router.get("/matches/today")
-def get_matches_today(date: str = Query(None)):
-    scraper = ESPNRequestsScraper()
-    date_str = date.replace("-", "") if date else datetime.now().strftime("%Y%m%d")
-    return scraper.get_matches_by_date(date_str)
 
 @router.get("/weeks")
 def get_weeks(db: Session = Depends(get_db)):
