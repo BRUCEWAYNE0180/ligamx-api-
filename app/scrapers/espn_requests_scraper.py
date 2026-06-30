@@ -90,7 +90,7 @@ class ESPNRequestsScraper(BaseScraper):
                 players.append({"id":int(ath.get("id")) if ath.get("id") else None, "name":ath.get("displayName", ""), "team_name":team["name"], "position":(ath.get("position") or {}).get("abbreviation") or (ath.get("position") or {}).get("name"), "number":int(ath.get("jersey")) if ath.get("jersey") not in (None, "") else None, "nationality":(ath.get("country") or {}).get("name") if ath.get("country") else None, "birth_date":ath.get("dateOfBirth"), "photo_url":(ath.get("headshot") or {}).get("href") if ath.get("headshot") else None})
             time.sleep(0.15)
         return players
-    def get_matches(self, season_id: int = None) -> List[Dict]:
+    def get_matches(self, season_id: int = None, tournament: str = None) -> List[Dict]:
         teams=self._teams or self.get_teams()
         if not teams: return []
         tnames={t["name"] for t in teams}
@@ -102,9 +102,10 @@ class ESPNRequestsScraper(BaseScraper):
         year = season_id or datetime.now().year
         # Liga MX juega DOS torneos por ano: Clausura (ene-jun) y Apertura (jul-dic).
         # Antes solo se bajaban los meses jul-dic, por lo que el Clausura nunca se
-        # cargaba. Ahora elegimos la ventana de meses segun el torneo vigente.
+        # cargaba. Ahora elegimos la ventana de meses segun el torneo (el vigente
+        # por defecto, o el indicado para backfill de temporadas pasadas).
         from app.season import current_tournament
-        tournament, _ = current_tournament()
+        tournament = tournament or current_tournament()[0]
         months = [1, 2, 3, 4, 5, 6] if tournament == "Clausura" else [7, 8, 9, 10, 11, 12]
         ranges = []
         for mm in months:

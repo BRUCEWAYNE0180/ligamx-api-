@@ -157,6 +157,7 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
+- `POST /sync/backfill?year=2025&tournament=Apertura` — **carga una temporada pasada al histórico** sin borrar las demás; la tabla se reconstruye desde los resultados (requiere `X-API-Key`) 🆕
 - `GET /sync/status` — **estado y frescura de los datos** (último sync, si fue exitoso, antigüedad) 🆕
 
 ---
