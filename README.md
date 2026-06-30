@@ -133,6 +133,9 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /365scores/matches/{game_id}/lineups` — alineaciones con posiciones
 - `GET /365scores/matches/{game_id}/events` — eventos
 - `GET /365scores/matches/{game_id}/cards` — tarjetas
+- `GET /365scores/matches/{game_id}/player-stats` — **estadísticas COMPLETAS por jugador** (minutos, goles, xG, xA, remates, pases, regates, duelos, intercepciones, rating...) para todos los jugadores 🆕
+- `GET /365scores/leaders?category_id=` — **líderes de temporada por jugador** en 16 categorías (goles, asistencias, xG, tarjetas, salvadas, valla invicta...) 🆕
+- `GET /365scores/team-leaders?category_id=` — líderes de temporada por equipo 🆕
 
 ### Extras
 - `GET /extras/highlights` — highlights en **video + miniaturas** de los últimos partidos (TheSportsDB, con Scorebat de respaldo)

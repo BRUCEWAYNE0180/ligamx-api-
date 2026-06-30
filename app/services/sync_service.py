@@ -113,6 +113,51 @@ def _sync_sofascore_event_ids(db):
     except Exception as e:
         logger.warning(f"SofaScore event ID sync failed: {e}")
 
+def _sync_referees(db):
+    """Asigna el arbitro a cada partido jugado cruzando con 365Scores (que SI
+    expone el cuerpo arbitral; ESPN no). Se empareja por nombres de equipo y
+    fecha. Best-effort y aislado: un fallo no invalida el resto del sync."""
+    try:
+        from app.scrapers.scores365_scraper import Scores365Scraper
+        scraper = Scores365Scraper()
+        games = [g for g in scraper.get_matches() if g.get("status") == "finished"]
+        if not games:
+            return
+        db_matches = (
+            db.query(models.Match)
+            .filter(models.Match.status == "finished", models.Match.referee.is_(None))
+            .all()
+        )
+        updated = 0
+        for dm in db_matches:
+            home = dm.home_team.name if dm.home_team else None
+            away = dm.away_team.name if dm.away_team else None
+            if not home or not away:
+                continue
+            md = dm.match_date.date() if dm.match_date else None
+            for g in games:
+                if not (_teams_match(home, g.get("home_team")) and _teams_match(away, g.get("away_team"))):
+                    continue
+                gd = g["match_date"].date() if g.get("match_date") else None
+                if md and gd and abs((md - gd).days) > 2:
+                    continue
+                try:
+                    info = scraper.get_match_info(g["event_id"])
+                except Exception:
+                    break
+                if info.get("referee"):
+                    dm.referee = info["referee"]
+                    db.add(dm)
+                    updated += 1
+                time.sleep(0.1)
+                break
+        db.commit()
+        logger.info(f"Arbitros asignados via 365Scores: {updated}")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Sync de arbitros fallo (no critico): {e}")
+
+
 def _enrich_team_assets(db):
     """Enriquece equipos y estadios con datos de TheSportsDB (cruzando por
     idESPN): ano de fundacion, escudo (si falta) y capacidad del estadio.
@@ -382,6 +427,9 @@ def run_sync(db, source: str = "espn"):
 
     # SofaScore event IDs (puede fallar por bloqueo de Cloudflare/403)
     _sync_sofascore_event_ids(db)
+
+    # Arbitros via 365Scores (ESPN no los expone)
+    _sync_referees(db)
 
     # Detalle por partido: eventos (goles/tarjetas/cambios) y alineaciones.
     # Se enlaza por el id externo del partido (solo partidos jugados).

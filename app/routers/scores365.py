@@ -53,3 +53,27 @@ def events(game_id: int):
 @cached(60)
 def cards(game_id: int):
     return Scores365Scraper().get_match_cards(game_id)
+
+
+@router.get("/matches/{game_id}/player-stats")
+@cached(120)
+def match_player_stats(game_id: int):
+    """Estadisticas COMPLETAS por jugador del partido (minutos, goles, xG, xA,
+    remates, pases, regates, duelos, intercepciones, rating...) para todos los
+    jugadores de la alineacion. Joyita que ESPN no expone."""
+    return Scores365Scraper().get_match_player_stats(game_id)
+
+
+@router.get("/leaders")
+@cached(600)
+def player_leaders(category_id: int = Query(None, description="1=Goles, 3=Asistencias, 5=Goles+Asist, 12=Amarillas, 15=Salvadas...")):
+    """Lideres de temporada por jugador en 16 categorias (goles, xG, asistencias,
+    tarjetas, salvadas, valla invicta...). Filtra con category_id."""
+    return Scores365Scraper().get_player_season_leaders(category_id)
+
+
+@router.get("/team-leaders")
+@cached(600)
+def team_leaders(category_id: int = Query(None)):
+    """Lideres de temporada por equipo."""
+    return Scores365Scraper().get_team_season_leaders(category_id)

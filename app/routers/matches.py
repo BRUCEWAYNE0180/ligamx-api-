@@ -276,6 +276,7 @@ def get_match_full(match_id: int, db: Session = Depends(get_db)):
         "status": match.status,
         "match_date": match.match_date,
         "week_number": match.week_number,
+        "referee": match.referee,
         "venue": {
             "id": match.stadium.id, "name": match.stadium.name,
             "city": match.stadium.city, "capacity": match.stadium.capacity,

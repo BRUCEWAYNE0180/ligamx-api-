@@ -295,3 +295,78 @@ class Scores365Scraper(BaseScraper):
     def get_match_cards(self, game_id) -> List[Dict]:
         return [e for e in self.get_match_events(game_id)
                 if e["category"] in ("yellow_card", "red_card")]
+
+    # ---------- Joyitas: estadisticas por jugador ----------
+    def get_match_player_stats(self, game_id) -> Dict:
+        """Estadisticas COMPLETAS por jugador en un partido: minutos, goles,
+        asistencias, xG, xA, remates, pases completados, regates, duelos,
+        intercepciones, toques, rating (ranking)... para TODOS los jugadores
+        de la alineacion (no solo los que anotan). ESPN no expone este detalle.
+        """
+        game = self._game_raw(game_id)
+        members = {m["id"]: m for m in game.get("members", [])}
+        teams = []
+        for side in ("homeCompetitor", "awayCompetitor"):
+            c = game.get(side, {}) or {}
+            lu = c.get("lineups") or {}
+            players = []
+            for m in lu.get("members", []):
+                info = members.get(m.get("id"), {})
+                pos = m.get("position", {}) or {}
+                # Las stats vienen como lista de {name, value}; las volvemos
+                # un dict {nombre: valor} mas comodo de consumir.
+                stats = {s.get("name"): s.get("value") for s in (m.get("stats") or []) if s.get("name")}
+                players.append({
+                    "player_id": int(m["id"]) if m.get("id") else None,
+                    "name": info.get("name") or info.get("shortName"),
+                    "jersey": info.get("jerseyNumber"),
+                    "position": pos.get("name"),
+                    "starter": m.get("status") == 1 or m.get("statusText") == "Starting",
+                    "rating": m.get("ranking"),
+                    "stats": stats,
+                })
+            teams.append({
+                "team_id": int(c["id"]) if c.get("id") else None,
+                "team_name": c.get("name"),
+                "home_away": "home" if side == "homeCompetitor" else "away",
+                "formation": lu.get("formation"),
+                "players": players,
+            })
+        return {"game_id": game_id, "teams": teams}
+
+    def _season_leaders(self, key: str) -> List[Dict]:
+        data = self._get_json("stats/", {"competitions": COMPETITION_ID}).get("stats", {})
+        out = []
+        for c in data.get(key, []) or []:
+            rows = []
+            for row in c.get("rows", []):
+                e = row.get("entity", {}) or {}
+                value = (row.get("stats") or [{}])[0].get("value")
+                rows.append({
+                    "rank": (row.get("position", 0) or 0) + 1,
+                    "id": int(e["id"]) if e.get("id") else None,
+                    "name": e.get("name"),
+                    "team_id": int(e["competitorId"]) if e.get("competitorId") else None,
+                    "position": e.get("positionName"),
+                    "value": value,
+                    "note": row.get("secondaryStatName"),
+                })
+            out.append({"category_id": c.get("id"), "category": c.get("name"), "leaders": rows})
+        return out
+
+    def get_player_season_leaders(self, category_id: int = None) -> List[Dict]:
+        """Lideres de temporada por jugador en 16 categorias: goles, goles
+        esperados (xG), asistencias, xA, goles+asistencias, penales, barridas,
+        intercepciones, tarjetas rojas/amarillas, valla invicta, goles recibidos,
+        salvadas y penales atajados. Un solo request (no raspa partido por partido)."""
+        leaders = self._season_leaders("athletesStats")
+        if category_id is not None:
+            leaders = [c for c in leaders if c.get("category_id") == category_id]
+        return leaders
+
+    def get_team_season_leaders(self, category_id: int = None) -> List[Dict]:
+        """Lideres de temporada por equipo (goles, posesion, etc.)."""
+        leaders = self._season_leaders("competitorsStats")
+        if category_id is not None:
+            leaders = [c for c in leaders if c.get("category_id") == category_id]
+        return leaders
