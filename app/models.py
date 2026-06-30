@@ -131,6 +131,20 @@ class News(Base):
     published_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
+class SyncLog(Base):
+    __tablename__ = "sync_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, nullable=True)
+    status = Column(String, index=True)          # "success" | "error"
+    detail = Column(String, nullable=True)
+    season = Column(String, nullable=True)
+    teams = Column(Integer, nullable=True)
+    players = Column(Integer, nullable=True)
+    matches = Column(Integer, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, default=func.now(), index=True)
+
 class MatchStat(Base):
     __tablename__ = "match_stats"
     id = Column(Integer, primary_key=True, index=True)

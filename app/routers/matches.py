@@ -6,6 +6,7 @@ from app.dependencies import get_or_404
 from app import models, schemas
 from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
 from app.scrapers.sofascore_scraper import get_match_details
+from app.cache import cached
 
 router = APIRouter()
 
@@ -42,12 +43,49 @@ def get_h2h(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
         ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))
     ).order_by(models.Match.match_date).all()
 
+@router.get("/h2h/{team1_id}/{team2_id}/summary")
+def get_h2h_summary(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
+    """Resumen del historial entre dos equipos: partidos jugados, victorias de
+    cada uno, empates y goles totales."""
+    t1 = get_or_404(db, models.Team, team1_id)
+    t2 = get_or_404(db, models.Team, team2_id)
+    matches = db.query(models.Match).filter(
+        (((models.Match.home_team_id == team1_id) & (models.Match.away_team_id == team2_id)) |
+         ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))),
+        models.Match.status == "finished",
+        models.Match.home_score != None, models.Match.away_score != None,
+    ).all()
+
+    t1_wins = t2_wins = draws = t1_goals = t2_goals = 0
+    for m in matches:
+        if m.home_team_id == team1_id:
+            g1, g2 = m.home_score, m.away_score
+        else:
+            g1, g2 = m.away_score, m.home_score
+        t1_goals += g1
+        t2_goals += g2
+        if g1 > g2:
+            t1_wins += 1
+        elif g2 > g1:
+            t2_wins += 1
+        else:
+            draws += 1
+
+    return {
+        "team1": {"id": team1_id, "name": t1.name, "wins": t1_wins, "goals": t1_goals},
+        "team2": {"id": team2_id, "name": t2.name, "wins": t2_wins, "goals": t2_goals},
+        "played": len(matches),
+        "draws": draws,
+    }
+
 @router.get("/matches/live")
+@cached(30)
 def get_live_matches():
     scraper = ESPNRequestsScraper()
     return scraper.get_live_matches()
 
 @router.get("/matches/today")
+@cached(60)
 def get_matches_today(date: str = Query(None)):
     scraper = ESPNRequestsScraper()
     date_str = date.replace("-", "") if date else datetime.now().strftime("%Y%m%d")
@@ -65,23 +103,27 @@ def get_match_sofascore(match_id: int, db: Session = Depends(get_db)):
     return get_match_details(match.sofascore_event_id)
 
 @router.get("/matches/{event_id}/stats")
+@cached(120)
 def get_match_stats(event_id: str):
     scraper = ESPNRequestsScraper()
     return scraper.get_match_stats(event_id)
 
 @router.get("/matches/{event_id}/lineups")
+@cached(120)
 def get_match_lineups(event_id: str):
     """Alineaciones del partido: titulares, suplentes, formacion y posiciones."""
     scraper = ESPNRequestsScraper()
     return scraper.get_match_lineups(event_id)
 
 @router.get("/matches/{event_id}/events")
+@cached(120)
 def get_match_events(event_id: str):
     """Eventos clave del partido: goles, tarjetas y cambios."""
     scraper = ESPNRequestsScraper()
     return scraper.get_match_events(event_id)
 
 @router.get("/matches/{event_id}/cards")
+@cached(120)
 def get_match_cards(event_id: str):
     """Solo tarjetas (amarillas y rojas) del partido."""
     scraper = ESPNRequestsScraper()

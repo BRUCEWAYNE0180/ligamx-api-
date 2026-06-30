@@ -104,6 +104,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/live` — partidos en vivo (hoy)
 - `GET /matches/today?date=YYYY-MM-DD` — partidos de un día
 - `GET /h2h/{team1}/{team2}` — historial entre dos equipos
+- `GET /h2h/{team1}/{team2}/summary` — **resumen del historial** (victorias, goles, empates) 🆕
 - `GET /weeks` — jornadas disponibles
 - `GET /weeks/current` — jornada actual
 
@@ -114,6 +115,7 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### Jugadores y estadísticas
 - `GET /players` — lista
+- `GET /players/search?q=&position=&nationality=&team_id=` — **búsqueda y filtros** (ignora acentos) 🆕
 - `GET /players/top?season=` — mejores por goles
 - `GET /players/{id}` — detalle
 - `GET /players/{id}/stats?season=` — estadísticas del jugador
@@ -139,6 +141,7 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
+- `GET /sync/status` — **estado y frescura de los datos** (último sync, si fue exitoso, antigüedad) 🆕
 
 ---
 
@@ -163,7 +166,31 @@ startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
 
 ---
 
-## 🏗️ Arquitectura
+## ⚡ Rendimiento (caché)
+
+Los endpoints que consultan fuentes externas (`/matches/live`, `/matches/today`,
+`/matches/{id}/stats|lineups|events|cards`, todos los `/365scores/*` y
+`/extras/*`) usan un **caché en memoria con TTL** (de 30s para datos en vivo
+hasta 24h para assets). Esto responde al instante y evita rate-limits/baneos de
+las fuentes. Los endpoints que leen de la base de datos no se cachean (ya son
+rápidos).
+
+---
+
+## 🧪 Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+La suite cubre el helper de temporada, el caché, la red de seguridad del sync y
+los endpoints principales (con una BD SQLite sembrada, sin tocar la red).
+Se ejecuta automáticamente en cada push/PR vía GitHub Actions
+(`.github/workflows/tests.yml`), que además valida que las migraciones de
+Alembic apliquen correctamente.
+
+---
 
 ```
 app/

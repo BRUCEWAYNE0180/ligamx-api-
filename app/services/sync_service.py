@@ -329,4 +329,38 @@ def run_sync(db, source: str = "espn"):
         "teams": team_count,
         "players": len(db.query(models.Player).all()),
         "matches": len(db.query(models.Match).all()),
+        "season": f"{tournament} {current_year}",
     }
+
+
+def run_sync_with_log(db, source: str = "espn"):
+    """Ejecuta run_sync y registra el resultado (exito o error) en sync_logs.
+    Devuelve el resultado del sync; relanza la excepcion si falla."""
+    started = datetime.utcnow()
+    try:
+        result = run_sync(db, source)
+    except Exception as e:
+        try:
+            db.rollback()
+            db.add(models.SyncLog(
+                source=source, status="error", detail=str(e)[:500],
+                started_at=started,
+                duration_seconds=(datetime.utcnow() - started).total_seconds(),
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise
+    try:
+        db.add(models.SyncLog(
+            source=source, status="success", detail="ok",
+            season=result.get("season"),
+            teams=result.get("teams"), players=result.get("players"),
+            matches=result.get("matches"),
+            started_at=started,
+            duration_seconds=(datetime.utcnow() - started).total_seconds(),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    return result

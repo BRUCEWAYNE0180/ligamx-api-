@@ -1,12 +1,54 @@
-from fastapi import APIRouter, Depends, Header
+from datetime import datetime
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import verify_api_key
-from app.services.sync_service import run_sync
+from app.services.sync_service import run_sync_with_log
+from app import models
 
 router = APIRouter()
 
 @router.post("/sync")
 def sync_data(source: str = "espn", db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    result = run_sync(db, source)
+    result = run_sync_with_log(db, source)
     return {"message": "Datos sincronizados", "source": source, "result": result}
+
+
+@router.get("/sync/status")
+def sync_status(db: Session = Depends(get_db)):
+    """Estado y frescura de los datos: ultimo sync, si fue exitoso y hace
+    cuanto corrio. Util para monitoreo y para confiar en la API."""
+    last = db.query(models.SyncLog).order_by(models.SyncLog.finished_at.desc()).first()
+    last_success = (
+        db.query(models.SyncLog)
+        .filter(models.SyncLog.status == "success")
+        .order_by(models.SyncLog.finished_at.desc())
+        .first()
+    )
+
+    def serialize(log):
+        if not log:
+            return None
+        return {
+            "status": log.status,
+            "source": log.source,
+            "season": log.season,
+            "teams": log.teams,
+            "players": log.players,
+            "matches": log.matches,
+            "detail": log.detail,
+            "duration_seconds": round(log.duration_seconds, 1) if log.duration_seconds else None,
+            "finished_at": log.finished_at,
+        }
+
+    age_seconds = None
+    if last_success and last_success.finished_at:
+        age_seconds = (datetime.utcnow() - last_success.finished_at).total_seconds()
+
+    return {
+        "last_sync": serialize(last),
+        "last_successful_sync": serialize(last_success),
+        "data_age_seconds": int(age_seconds) if age_seconds is not None else None,
+        "data_age_hours": round(age_seconds / 3600, 1) if age_seconds is not None else None,
+        "has_data": db.query(models.Team).count() > 0,
+    }
