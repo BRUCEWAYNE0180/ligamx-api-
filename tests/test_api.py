@@ -775,3 +775,60 @@ def test_players_to_watch_sin_datos(client, seeded):
     r = client.get("/matches/1/players-to-watch").json()
     assert r["home_team"]["players"] == [] and r["away_team"]["players"] == []
     assert "note" in r
+
+
+
+# ---------- Disciplina: tarjetas acumuladas y suspensiones ----------
+
+def _seed_cards(db):
+    """Agrega tarjetas al jugador 'Tarjetero' (equipo 1): 4 amarillas (en riesgo)."""
+    from app import models
+    for minute in (10, 20, 30, 40):
+        db.add(models.MatchEvent(match_id=1, event_type="yellow_card", event_time=minute,
+                                 player_name="Tarjetero", team_id=1, team_name="América",
+                                 description="Yellow Card", is_home=1))
+    db.commit()
+
+
+def test_players_discipline(client, seeded, db):
+    _seed_cards(db)
+    r = client.get("/players/discipline").json()
+    assert r["season"] == "Apertura 2026"
+    players = {p["player"]: p for p in r["players"]}
+    # Rival X tiene 1 amarilla sembrada en el fixture; Tarjetero 4
+    assert players["Tarjetero"]["yellow_cards"] == 4
+    assert players["Tarjetero"]["suspension_risk"] is True
+    assert players["Tarjetero"]["yellows_to_suspension"] == 1
+    assert players["Rival X"]["yellow_cards"] == 1
+    assert players["Rival X"]["suspension_risk"] is False
+    # ordenado por discipline_points desc -> Tarjetero primero
+    assert r["players"][0]["player"] == "Tarjetero"
+
+
+def test_players_discipline_at_risk(client, seeded, db):
+    _seed_cards(db)
+    r = client.get("/players/discipline", params={"at_risk": True}).json()
+    nombres = {p["player"] for p in r["players"]}
+    assert "Tarjetero" in nombres and "Rival X" not in nombres
+
+
+def test_player_discipline_individual(client, seeded, db):
+    from app import models
+    db.add(models.Player(id=20, team_id=1, name="Tarjetero"))
+    _seed_cards(db)
+    r = client.get("/players/20/discipline").json()
+    assert r["player"] == "Tarjetero"
+    assert r["yellow_cards"] == 4 and r["red_cards"] == 0
+    assert r["suspension_risk"] is True
+
+
+def test_team_discipline(client, seeded, db):
+    _seed_cards(db)
+    r = client.get("/teams/1/discipline").json()
+    assert r["team_id"] == 1
+    assert r["totals"]["yellow_cards"] == 4  # Tarjetero (equipo 1)
+    assert any(p["player"] == "Tarjetero" for p in r["players"])
+    assert len(r["at_risk"]) == 1
+    # equipo 2 (Chivas) tiene la amarilla de Rival X
+    r2 = client.get("/teams/2/discipline").json()
+    assert r2["totals"]["yellow_cards"] == 1

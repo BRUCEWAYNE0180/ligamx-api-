@@ -105,6 +105,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /teams/{id}/form` — **forma reciente** (W/D/L + racha) 🆕
 - `GET /teams/{id}/stats?season=` — promedios/totales de estadísticas
 - `GET /teams/{id}/season-stats?season=` — **~100 estadísticas del equipo en la temporada vía ESPN** (porterías a cero, goles recibidos, pases completados, tackles, intercepciones, duelos...) 🆕
+- `GET /teams/{id}/discipline?season=` — **disciplina del equipo**: totales de tarjetas + desglose por jugador y quién está en riesgo de suspensión 🆕
 - `GET /teams/xg-performance?season=&order=over|under` — **goles vs xG por equipo** (efectivos vs desperdiciadores) 🆕
 
 ### Partidos
@@ -168,6 +169,8 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /players/{id}/season-stats?season=` — **resumen agregado de la temporada** (minutos, goles, asistencias, xG, xA, rating promedio) 🆕
 - `GET /players/season-leaders?stat=&season=&min_appearances=` — **tabla de líderes desde la BD** (goals, assists, minutes, xg, xa, rating...) 🆕
 - `GET /players/xg-performance?season=&order=over|under` — **goles vs xG**: quién finaliza por encima/debajo de lo esperado 🆕
+- `GET /players/discipline?season=&order=&at_risk=` — **tabla de disciplina**: tarjetas amarillas/rojas acumuladas por jugador, con riesgo de suspensión (regla Liga MX: 5 amarillas = 1 partido) 🆕
+- `GET /players/{id}/discipline?season=` — **tarjetas acumuladas de un jugador** y su estado de suspensión 🆕
 - `GET /player-stats?season=` — estadísticas agregadas
 
 ### Datos en vivo (365Scores)

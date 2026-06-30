@@ -25,6 +25,30 @@ def get_or_404(db, model, id_value):
     return item
 
 
+# Liga MX: al acumular 5 tarjetas amarillas, el jugador cumple 1 partido de
+# suspension (y el contador se reinicia). Una roja directa tambien suspende.
+SUSPENSION_YELLOWS = 5
+
+
+def discipline_summary(yellow, red, threshold=SUSPENSION_YELLOWS):
+    """Resumen de disciplina a partir de amarillas/rojas acumuladas.
+
+    Devuelve el conteo, cuantas suspensiones por acumulacion ha provocado, a
+    cuantas amarillas esta de la siguiente suspension, si esta en riesgo (a una
+    amarilla) y un indice simple de indisciplina (amarilla=1, roja=2)."""
+    yellow = int(yellow or 0)
+    red = int(red or 0)
+    cycle = yellow % threshold
+    return {
+        "yellow_cards": yellow,
+        "red_cards": red,
+        "yellow_suspensions": yellow // threshold,
+        "yellows_to_suspension": (threshold - cycle) if cycle else threshold,
+        "suspension_risk": cycle == threshold - 1,
+        "discipline_points": yellow + red * 2,
+    }
+
+
 def _apertura_first():
     # Dentro de un mismo ano, el Apertura es posterior al Clausura.
     return case((models.Season.tournament_type == "Apertura", 1), else_=0)
