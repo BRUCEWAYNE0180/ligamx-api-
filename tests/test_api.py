@@ -352,3 +352,34 @@ def test_liguilla_bracket(client, db):
     assert qf["C1"]["high_seed"]["position"] == 1
     assert qf["C3"]["high_seed"]["position"] == 3 and qf["C3"]["low_seed"]["position"] == 6
     assert qf["C4"]["high_seed"]["position"] == 4 and qf["C4"]["low_seed"]["position"] == 5
+
+
+
+# ---------- Búsqueda global ----------
+
+def test_search_global(client, seeded):
+    # jugador por nombre (ignora acentos)
+    r = client.get("/search", params={"q": "henry"}).json()
+    assert r["counts"]["players"] == 1
+    assert r["players"][0]["name"] == "Henry Martín"
+    assert r["players"][0]["team_name"] == "América"
+    # equipo (acentos: 'América' coincide con 'amer')
+    r2 = client.get("/search", params={"q": "amer"}).json()
+    assert any(t["name"] == "América" for t in r2["teams"])
+    # estadio sembrado
+    r3 = client.get("/search", params={"q": "test"}).json()
+    assert any(s["name"] == "Estadio Test" for s in r3["stadiums"])
+
+
+def test_search_prefijo_primero(client, seeded, db):
+    from app import models
+    # 'Martín' contiene pero no empieza; 'Mart' como prefijo debe ir antes
+    db.add(models.Player(id=11, team_id=1, name="Martina López"))
+    db.commit()
+    r = client.get("/search", params={"q": "mart"}).json()
+    # ambos coinciden; el que EMPIEZA por 'mart' (Martina) va primero
+    assert r["players"][0]["name"] == "Martina López"
+
+
+def test_search_requiere_q(client):
+    assert client.get("/search").status_code == 422

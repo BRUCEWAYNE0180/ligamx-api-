@@ -124,6 +124,9 @@ alembic revision --autogenerate -m "describe el cambio"
 > (`2026`, devuelve el torneo más reciente de ese año). Sin `season`, se usa la
 > temporada vigente. Los partidos pueden filtrarse con `GET /matches?season=`.
 
+### Búsqueda global
+- `GET /search?q=&limit=` — **busca equipos, jugadores y estadios** a la vez por nombre (ignora acentos; los que empiezan por la consulta aparecen primero) 🆕
+
 ### Jugadores y estadísticas
 - `GET /players` — lista
 - `GET /players/search?q=&position=&nationality=&team_id=` — **búsqueda y filtros** (ignora acentos) 🆕
