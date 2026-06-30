@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import logging
 import os
+import re
+import time
 from typing import List, Dict, Any
 from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
@@ -143,6 +145,71 @@ def _enrich_team_assets(db):
         logger.warning(f"Enriquecimiento TheSportsDB fallo (no critico): {e}")
 
 
+def _parse_minute(value):
+    """Extrae el minuto (entero) de cadenas como "45'", "90'+2", "45+1'"."""
+    if value is None:
+        return None
+    m = re.match(r"\s*(\d+)", str(value))
+    return int(m.group(1)) if m else None
+
+
+def _sync_events_and_lineups(db, scraper, match_map: Dict[str, Dict], tmap: Dict):
+    """Persiste, por cada partido jugado, sus EVENTOS (goles, tarjetas amarillas
+    y rojas, cambios) y sus ALINEACIONES (titulares y suplentes con posicion y
+    dorsal). Las tablas match_events/match_lineups ya fueron vaciadas en WRITE.
+
+    match_map: { event_id(str): {match_id, home, away} }.
+    Tolerante a fallos por partido para no abortar todo el sync.
+    """
+    if not match_map:
+        logger.info("Sin partidos jugados para detallar (eventos/alineaciones)")
+        return
+    n_events = n_lineups = 0
+    for eid, info in match_map.items():
+        mid, home = info["match_id"], info.get("home")
+        # Eventos
+        try:
+            for ev in (scraper.get_match_events(eid) or []):
+                tname = ev.get("team_name")
+                db.add(models.MatchEvent(
+                    match_id=mid,
+                    event_type=ev.get("category") or "other",
+                    event_time=_parse_minute(ev.get("minute")),
+                    player_name=ev.get("player"),
+                    team_id=tmap.get(tname),
+                    team_name=tname,
+                    description=ev.get("type"),
+                    is_home=(1 if tname and tname == home else 0) if tname else None,
+                ))
+                n_events += 1
+        except Exception as e:
+            logger.warning(f"Eventos del partido {eid} fallaron: {e}")
+        # Alineaciones
+        try:
+            lineups = scraper.get_match_lineups(eid) or {}
+            for team in lineups.get("teams", []):
+                tname = team.get("team_name")
+                tid = tmap.get(tname)
+                for group, is_sub in (("starters", 0), ("substitutes", 1)):
+                    for pl in team.get(group, []) or []:
+                        db.add(models.MatchLineup(
+                            match_id=mid,
+                            player_id=pl.get("player_id"),
+                            player_name=pl.get("name"),
+                            team_id=tid,
+                            team_name=tname,
+                            position=pl.get("position"),
+                            is_substitute=is_sub,
+                            jersey_number=pl.get("jersey"),
+                        ))
+                        n_lineups += 1
+        except Exception as e:
+            logger.warning(f"Alineaciones del partido {eid} fallaron: {e}")
+        time.sleep(0.1)
+    db.commit()
+    logger.info(f"Persistidos {n_events} eventos y {n_lineups} jugadores en alineaciones")
+
+
 def run_sync(db, source: str = "espn"):
     """Ejecuta la sincronizacion completa de datos.
 
@@ -255,22 +322,25 @@ def run_sync(db, source: str = "espn"):
         db.flush()
 
         # Partidos
+        match_objs = []  # (Match, raw_dict) para enlazar eventos/alineaciones luego
         for m in raw_matches:
             hid = tmap.get(m.get("home_team_id")) or tmap.get(m.get("home_team"))
             aid = tmap.get(m.get("away_team_id")) or tmap.get(m.get("away_team"))
             if hid and aid:
-                db.add(
-                    models.Match(
-                        season_id=sn.id,
-                        home_team_id=hid,
-                        away_team_id=aid,
-                        match_date=m.get("match_date"),
-                        home_score=m.get("home_score"),
-                        away_score=m.get("away_score"),
-                        status=m.get("status", "scheduled"),
-                        week_number=m.get("week"),
-                    )
+                eid = m.get("event_id")
+                mo = models.Match(
+                    season_id=sn.id,
+                    home_team_id=hid,
+                    away_team_id=aid,
+                    match_date=m.get("match_date"),
+                    home_score=m.get("home_score"),
+                    away_score=m.get("away_score"),
+                    status=m.get("status", "scheduled"),
+                    week_number=m.get("week"),
+                    external_event_id=str(eid) if eid is not None else None,
                 )
+                db.add(mo)
+                match_objs.append((mo, m))
 
         # Standings
         for s in raw_standings:
@@ -311,6 +381,22 @@ def run_sync(db, source: str = "espn"):
     # SofaScore event IDs (puede fallar por bloqueo de Cloudflare/403)
     _sync_sofascore_event_ids(db)
 
+    # Detalle por partido: eventos (goles/tarjetas/cambios) y alineaciones.
+    # Se enlaza por el id externo del partido (solo partidos jugados).
+    try:
+        match_map = {}
+        for mo, raw in match_objs:
+            if raw.get("status") in ("finished", "live") and raw.get("event_id") is not None:
+                match_map[str(raw["event_id"])] = {
+                    "match_id": mo.id,
+                    "home": raw.get("home_team"),
+                    "away": raw.get("away_team"),
+                }
+        _sync_events_and_lineups(db, scraper, match_map, tmap)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Sync de eventos/alineaciones fallo (no critico): {e}")
+
     # News sync (aislado para no invalidar el resto)
     try:
         news_items = fetch_news(limit=50)
@@ -329,4 +415,38 @@ def run_sync(db, source: str = "espn"):
         "teams": team_count,
         "players": len(db.query(models.Player).all()),
         "matches": len(db.query(models.Match).all()),
+        "season": f"{tournament} {current_year}",
     }
+
+
+def run_sync_with_log(db, source: str = "espn"):
+    """Ejecuta run_sync y registra el resultado (exito o error) en sync_logs.
+    Devuelve el resultado del sync; relanza la excepcion si falla."""
+    started = datetime.utcnow()
+    try:
+        result = run_sync(db, source)
+    except Exception as e:
+        try:
+            db.rollback()
+            db.add(models.SyncLog(
+                source=source, status="error", detail=str(e)[:500],
+                started_at=started,
+                duration_seconds=(datetime.utcnow() - started).total_seconds(),
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise
+    try:
+        db.add(models.SyncLog(
+            source=source, status="success", detail="ok",
+            season=result.get("season"),
+            teams=result.get("teams"), players=result.get("players"),
+            matches=result.get("matches"),
+            started_at=started,
+            duration_seconds=(datetime.utcnow() - started).total_seconds(),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    return result

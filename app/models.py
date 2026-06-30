@@ -67,6 +67,7 @@ class Match(Base):
     away_score = Column(Integer, nullable=True)
     status = Column(String, default="scheduled")
     sofascore_event_id = Column(Integer, nullable=True, index=True)
+    external_event_id = Column(String, nullable=True, index=True)  # id del partido en la fuente (ESPN/365)
     
     season = relationship("Season", back_populates="matches")
     week = relationship("Week", back_populates="matches")
@@ -130,6 +131,20 @@ class News(Base):
     source = Column(String)
     published_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
+
+class SyncLog(Base):
+    __tablename__ = "sync_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, nullable=True)
+    status = Column(String, index=True)          # "success" | "error"
+    detail = Column(String, nullable=True)
+    season = Column(String, nullable=True)
+    teams = Column(Integer, nullable=True)
+    players = Column(Integer, nullable=True)
+    matches = Column(Integer, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, default=func.now(), index=True)
 
 class MatchStat(Base):
     __tablename__ = "match_stats"

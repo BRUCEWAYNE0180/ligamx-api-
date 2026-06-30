@@ -97,6 +97,10 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/team/{team_id}` — por equipo
 - `GET /matches/week/{n}` — por jornada
 - `GET /matches/{id}` — detalle
+- `GET /matches/{id}/timeline` — **línea de tiempo guardada**: goles, tarjetas y cambios 🆕
+- `GET /matches/{id}/squad` — **alineaciones guardadas** (titulares/suplentes, posición, dorsal) 🆕
+- `GET /matches/{id}/full` — **TODO el partido en una respuesta** (marcador, eventos, alineaciones, stats) 🆕
+- `GET /matches/{id}/live` — **marcador EN VIVO** (goles, reloj, periodo, estado) 🆕
 - `GET /matches/{event_id}/stats` — estadísticas del partido (ESPN)
 - `GET /matches/{event_id}/lineups` — alineaciones (ESPN)
 - `GET /matches/{event_id}/events` — eventos clave (goles/tarjetas/cambios)
@@ -104,6 +108,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/live` — partidos en vivo (hoy)
 - `GET /matches/today?date=YYYY-MM-DD` — partidos de un día
 - `GET /h2h/{team1}/{team2}` — historial entre dos equipos
+- `GET /h2h/{team1}/{team2}/summary` — **resumen del historial** (victorias, goles, empates) 🆕
 - `GET /weeks` — jornadas disponibles
 - `GET /weeks/current` — jornada actual
 
@@ -114,6 +119,7 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### Jugadores y estadísticas
 - `GET /players` — lista
+- `GET /players/search?q=&position=&nationality=&team_id=` — **búsqueda y filtros** (ignora acentos) 🆕
 - `GET /players/top?season=` — mejores por goles
 - `GET /players/{id}` — detalle
 - `GET /players/{id}/stats?season=` — estadísticas del jugador
@@ -139,6 +145,7 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
+- `GET /sync/status` — **estado y frescura de los datos** (último sync, si fue exitoso, antigüedad) 🆕
 
 ---
 
@@ -163,7 +170,31 @@ startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
 
 ---
 
-## 🏗️ Arquitectura
+## ⚡ Rendimiento (caché)
+
+Los endpoints que consultan fuentes externas (`/matches/live`, `/matches/today`,
+`/matches/{id}/stats|lineups|events|cards`, todos los `/365scores/*` y
+`/extras/*`) usan un **caché en memoria con TTL** (de 30s para datos en vivo
+hasta 24h para assets). Esto responde al instante y evita rate-limits/baneos de
+las fuentes. Los endpoints que leen de la base de datos no se cachean (ya son
+rápidos).
+
+---
+
+## 🧪 Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+La suite cubre el helper de temporada, el caché, la red de seguridad del sync y
+los endpoints principales (con una BD SQLite sembrada, sin tocar la red).
+Se ejecuta automáticamente en cada push/PR vía GitHub Actions
+(`.github/workflows/tests.yml`), que además valida que las migraciones de
+Alembic apliquen correctamente.
+
+---
 
 ```
 app/
@@ -184,3 +215,11 @@ El **sync** es seguro por diseño: primero descarga todo a memoria (FETCH); si u
 fuente crítica falla, **aborta sin tocar la BD**. La escritura ocurre en una sola
 transacción (WRITE) y el enriquecimiento (stats, assets, noticias) corre aislado
 (ENRICH), de modo que un fallo ahí no invalida el resto.
+
+### Qué se guarda en la base de datos
+
+Equipos, estadios, jugadores, temporada, jornadas, partidos, tabla de posiciones,
+goleadores, estadísticas por equipo y por jugador, noticias y, por cada partido
+jugado, su **línea de tiempo completa** (goles, **tarjetas amarillas y rojas**,
+cambios) y sus **alineaciones** (titulares y suplentes con posición y dorsal).
+El marcador en vivo se consulta en el momento a la fuente (con caché corto).

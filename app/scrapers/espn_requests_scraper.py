@@ -335,3 +335,38 @@ class ESPNRequestsScraper(BaseScraper):
         """Solo tarjetas (amarillas y rojas) del partido."""
         return [e for e in self.get_match_events(event_id)
                 if e["category"] in ("yellow_card", "red_card")]
+
+    def get_match_live(self, event_id: str) -> Dict:
+        """Marcador en vivo de un partido: goles, estado, reloj y periodo,
+        a partir del header del summary de ESPN."""
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={event_id}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            logger.warning(f"match live {event_id}: {e}")
+            return {"event_id": event_id, "status": "unknown"}
+        header = data.get("header", {}) or {}
+        comp = (header.get("competitions") or [{}])[0]
+        competitors = comp.get("competitors", [])
+        home = next((c for c in competitors if c.get("homeAway") == "home"), {})
+        away = next((c for c in competitors if c.get("homeAway") == "away"), {})
+        status = comp.get("status", {}) or {}
+        st = status.get("type", {}) or {}
+        state = "finished" if st.get("completed") else "live" if st.get("state") == "in" else "scheduled"
+
+        def _score(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+        return {
+            "event_id": event_id,
+            "home_team": home.get("team", {}).get("displayName"),
+            "away_team": away.get("team", {}).get("displayName"),
+            "home_score": _score(home.get("score")),
+            "away_score": _score(away.get("score")),
+            "status": state,
+            "status_detail": st.get("description"),
+            "clock": status.get("displayClock"),
+            "period": status.get("period"),
+        }

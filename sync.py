@@ -1,5 +1,5 @@
 from app.database import engine, Base, SessionLocal
-from app.services.sync_service import run_sync
+from app.services.sync_service import run_sync_with_log
 from app import models
 
 # En SQLite (dev) creamos tablas al vuelo; en Postgres el esquema lo maneja
@@ -10,7 +10,7 @@ if engine.dialect.name == "sqlite":
 db = SessionLocal()
 
 try:
-    result = run_sync(db, "espn")
+    result = run_sync_with_log(db, "espn")
     print("OK estadios", result["stadiums"], "equipos", result["teams"], "jugadores", result["players"], "partidos", result["matches"])
     print("OK noticias", len(db.query(models.News).all()))
 except Exception as e:
