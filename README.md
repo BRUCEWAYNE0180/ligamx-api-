@@ -102,6 +102,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /teams/{id}/form` — **forma reciente** (W/D/L + racha) 🆕
 - `GET /teams/{id}/stats?season=` — promedios/totales de estadísticas
 - `GET /teams/{id}/season-stats?season=` — **~100 estadísticas del equipo en la temporada vía ESPN** (porterías a cero, goles recibidos, pases completados, tackles, intercepciones, duelos...) 🆕
+- `GET /teams/xg-performance?season=&order=over|under` — **goles vs xG por equipo** (efectivos vs desperdiciadores) 🆕
 
 ### Partidos
 - `GET /calendar?season=` — **calendario completo por jornada** con rival, fecha, sede oficial, marcador y estado 🆕
@@ -166,6 +167,8 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /365scores/matches/{game_id}/player-stats` — **estadísticas COMPLETAS por jugador** (minutos, goles, xG, xA, remates, pases, regates, duelos, intercepciones, rating...) para todos los jugadores 🆕
 - `GET /365scores/matches/{game_id}/shots` — **mapa de tiros con xG** (cada disparo: xG, xGoT, parte del cuerpo, resultado, coordenadas) + totales de xG por equipo 🆕
 - `GET /365scores/matches/{game_id}/top-performers` — **mejores jugadores del partido** por posición (local/visitante) 🆕
+- `GET /365scores/matches/{game_id}/heatmaps` — **mapas de calor por jugador** (URL de imagen) 🆕
+- `GET /365scores/goalkeepers` — **tabla de porteros** (vallas invictas, goles recibidos, salvadas, penales atajados) 🆕
 - `GET /365scores/news` — **noticias de Liga MX** (feed propio de 365Scores: título, imagen, url, fecha) 🆕
 - `GET /365scores/leaders?category_id=` — **líderes de temporada por jugador** en 16 categorías (goles, asistencias, xG, tarjetas, salvadas, valla invicta...) 🆕
 - `GET /365scores/team-leaders?category_id=` — líderes de temporada por equipo 🆕

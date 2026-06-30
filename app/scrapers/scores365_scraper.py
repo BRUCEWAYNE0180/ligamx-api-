@@ -495,3 +495,67 @@ class Scores365Scraper(BaseScraper):
                 "is_magazine": bool(n.get("isMagazine")),
             })
         return out[:limit]
+
+
+    def get_goalkeepers(self) -> List[Dict]:
+        """Tabla de porteros de la temporada (de 365Scores stats): vallas invictas
+        (clean sheets), goles recibidos, salvadas y penales atajados, fusionando
+        las categorias de arquero en una sola fila por jugador."""
+        data = self._get_json("stats/", {"competitions": COMPETITION_ID}).get("stats", {})
+        cat_map = {13: "clean_sheets", 14: "goals_conceded", 15: "saves", 16: "penalties_saved"}
+        gks = {}
+        for c in data.get("athletesStats", []) or []:
+            key = cat_map.get(c.get("id"))
+            if not key:
+                continue
+            for row in c.get("rows", []):
+                e = row.get("entity", {}) or {}
+                pid = e.get("id")
+                if not pid:
+                    continue
+                g = gks.setdefault(int(pid), {
+                    "player_id": int(pid), "name": e.get("name"),
+                    "team_id": int(e["competitorId"]) if e.get("competitorId") else None,
+                    "clean_sheets": None, "goals_conceded": None,
+                    "saves": None, "penalties_saved": None,
+                })
+                g[key] = (row.get("stats") or [{}])[0].get("value")
+        out = list(gks.values())
+
+        def _cs(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return -1
+        out.sort(key=lambda g: _cs(g.get("clean_sheets")), reverse=True)
+        return out
+
+    def get_match_heatmaps(self, game_id, game: Dict = None) -> Dict:
+        """Mapas de calor (heatmap) por jugador del partido: URL de imagen lista
+        para mostrar, por cada jugador de la alineacion que tenga datos."""
+        game = game if game is not None else self._game_raw(game_id)
+        members = {m["id"]: m for m in game.get("members", [])}
+        teams = []
+        for side in ("homeCompetitor", "awayCompetitor"):
+            c = game.get(side, {}) or {}
+            lu = c.get("lineups") or {}
+            players = []
+            for m in lu.get("members", []):
+                hm = m.get("heatMap")
+                if not hm:
+                    continue
+                info = members.get(m.get("id"), {})
+                pos = m.get("position", {}) or {}
+                players.append({
+                    "player_id": int(m["id"]) if m.get("id") else None,
+                    "name": info.get("name") or info.get("shortName"),
+                    "position": pos.get("name"),
+                    "heatmap_url": hm,
+                })
+            teams.append({
+                "team_id": int(c["id"]) if c.get("id") else None,
+                "team_name": c.get("name"),
+                "home_away": "home" if side == "homeCompetitor" else "away",
+                "players": players,
+            })
+        return {"game_id": game_id, "teams": teams}
