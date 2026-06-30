@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import logging
+import os
 from typing import List, Dict, Any
 from app.scrapers.factory import get_scraper
 from app.scrapers.news_scraper import fetch_news
@@ -10,6 +11,41 @@ from app.season import current_tournament, tournament_from_matches
 from app import models
 
 logger = logging.getLogger(__name__)
+
+def _validate_season(detected_tournament: str, detected_year: int):
+    """Red de seguridad: verifica que los datos detectados correspondan al
+    torneo/ano esperado ANTES de tocar la BD. Si no coinciden, se aborta el
+    sync para no sobreescribir datos buenos con los de un torneo equivocado.
+
+    El esperado se calcula de la fecha del sistema, pero puede forzarse con
+    variables de entorno (utiles para pruebas o casos borde de calendario):
+      - EXPECTED_SEASON_YEAR (p. ej. "2026")
+      - EXPECTED_TOURNAMENT  (p. ej. "Apertura")
+    """
+    exp_tournament, exp_year = current_tournament()
+    if os.getenv("EXPECTED_SEASON_YEAR"):
+        try:
+            exp_year = int(os.getenv("EXPECTED_SEASON_YEAR"))
+        except ValueError:
+            logger.warning("EXPECTED_SEASON_YEAR no es un entero valido; se ignora")
+    if os.getenv("EXPECTED_TOURNAMENT"):
+        exp_tournament = os.getenv("EXPECTED_TOURNAMENT")
+
+    # El ano es la senal mas fuerte: si no coincide, abortamos.
+    if detected_year != exp_year:
+        raise ValueError(
+            f"Sync abortado: ano detectado en los datos ({detected_tournament} "
+            f"{detected_year}) != esperado ({exp_tournament} {exp_year}). "
+            f"Se conservan los datos previos. Si es intencional, define "
+            f"EXPECTED_SEASON_YEAR={detected_year}."
+        )
+
+    # Diferencia de torneo (mismo ano): solo advertencia (casos borde de calendario).
+    if detected_tournament != exp_tournament:
+        logger.warning(
+            f"Torneo detectado ({detected_tournament}) distinto al esperado "
+            f"({exp_tournament}) para {exp_year}; se continua pero revisa la fuente."
+        )
 
 def calculate_week_numbers(matches: List[Dict[str, Any]]):
     """Asigna numeros de jornada basandose en la fecha.
@@ -145,6 +181,9 @@ def run_sync(db, source: str = "espn"):
     # (p. ej. partidos jul-dic 2026 => "Apertura 2026"), no del mes actual.
     tournament, current_year = tournament_from_matches(raw_matches)
     logger.info(f"Temporada detectada de los datos: {tournament} {current_year}")
+
+    # Red de seguridad: aborta (sin tocar la BD) si no es el torneo/ano esperado.
+    _validate_season(tournament, current_year)
 
     # -------- FASE 2: WRITE (una sola transaccion) --------
     try:
