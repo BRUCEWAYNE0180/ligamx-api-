@@ -100,6 +100,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /teams/{id}/last-matches` — últimos partidos
 - `GET /teams/{id}/form` — **forma reciente** (W/D/L + racha) 🆕
 - `GET /teams/{id}/stats?season=` — promedios/totales de estadísticas
+- `GET /teams/{id}/season-stats?season=` — **~100 estadísticas del equipo en la temporada vía ESPN** (porterías a cero, goles recibidos, pases completados, tackles, intercepciones, duelos...) 🆕
 
 ### Partidos
 - `GET /matches` — filtros: `team_id`, `week`, `status`, `limit`, `offset`

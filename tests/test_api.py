@@ -496,3 +496,28 @@ def test_metrics_cuenta_errores(client):
     after = metrics.snapshot()
     assert after["requests"]["total"] > before
     assert after["requests"]["by_class"].get("4xx", 0) >= 1
+
+
+
+# ---------- Joyita: estadísticas de equipo por temporada (ESPN) ----------
+
+def test_team_season_stats(client, seeded, monkeypatch):
+    from app.scrapers import espn_requests_scraper as espn
+    fake = {"team_id": 1, "season_year": 2025, "categories": {
+        "defensive": {"interceptions": 154.0, "effectiveTackles": 176.0},
+        "goalKeeping": {"cleanSheet": 6.0, "goalsConceded": 23.0},
+    }}
+    monkeypatch.setattr(espn.ESPNRequestsScraper, "get_team_season_stats",
+                        lambda self, team_id, year=None: {**fake, "team_id": team_id, "season_year": year})
+    r = client.get("/teams/1/season-stats", params={"season": "Apertura 2025"}).json()
+    assert r["season_year"] == 2025  # ano extraido de la etiqueta
+    assert r["categories"]["goalKeeping"]["cleanSheet"] == 6.0
+
+
+def test_team_stats_usa_etiqueta_de_temporada(client, seeded):
+    # /teams/{id}/stats ahora resuelve la etiqueta vigente (no el viejo "2026")
+    r = client.get("/teams/1/stats").json()
+    # la MatchStat sembrada tiene season="Apertura 2026" y team_id=1
+    assert r["season"] == "Apertura 2026"
+    assert r["matches"] == 1
+    assert r["totals"]["shots"] == 12
