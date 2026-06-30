@@ -88,6 +88,9 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- Estadios con nombres **oficiales del Apertura 2026** (calendario LIGA BBVA):
+  Azteca → **Estadio Banorte** (América) y Alfonso Lastras → **Estadio Libertad
+  Financiera** (Atlético de San Luis).
 - Stats por jugador **persistidas en BD** (`player_match_stats`): historial
   partido a partido, agregados de temporada y tabla de líderes, todo cruzando con
   365Scores en una sola pasada del sync (un request por partido, que también trae
