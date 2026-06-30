@@ -50,6 +50,8 @@ detectado en los datos no coincide con el esperado.
 - [x] **Estadísticas por jugador completas** vía 365Scores (líderes de temporada
       en 16 categorías + stats completas por jugador en cada partido).
 - [x] Persistir **árbitros** (`Match.referee`, cruce con 365Scores).
+- [x] **Streaming en vivo (SSE)**: `GET /live/stream` empuja marcadores en vivo
+      sin polling.
 - [ ] Lesionados/suspendidos y disponibilidad por jornada.
 - [x] **Liguilla/Play-In**: `GET /liguilla/bracket` arma el cuadro oficial
       sembrado por la tabla (Play-In 7º-10º + Cuartos 1v8/2v7/3v6/4v5, a ida y
@@ -72,14 +74,15 @@ detectado en los datos no coincide con el esperado.
 
 ### Plataforma
 - [x] Búsqueda global (`GET /search?q=`) sobre equipos, jugadores y estadios.
+- [x] **Streaming en vivo (SSE)**: `GET /live/stream` empuja marcadores en vivo
+      sin polling (Server-Sent Events).
 - [x] **Rate limiting por IP** (slowapi): límite global configurable + límite
       estricto en `/sync` y `/sync/backfill`. Cabeceras `X-RateLimit-*` y `429`.
 - [x] **Seguridad endurecida**: `verify_api_key` con comparación de tiempo
       constante y `503` si falta `SYNC_API_KEY`; cabeceras `X-Content-Type-Options`,
       `X-Frame-Options`, `Referrer-Policy`.
 - [ ] Redis para caché compartido entre workers.
-- [ ] Streaming en vivo (SSE/WebSocket) en lugar de polling.
-- [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
+- [ ] Versionado de API (`/v1/...`).
 
 ## Hecho recientemente
 - Stats por jugador **persistidas en BD** (`player_match_stats`): historial

@@ -424,3 +424,27 @@ def test_rate_limit_devuelve_429():
     assert c.get("/ping").status_code == 200
     assert c.get("/ping").status_code == 200
     assert c.get("/ping").status_code == 429  # tercer request supera 2/minute
+
+
+
+# ---------- Streaming en vivo (SSE) ----------
+
+def test_live_stream_sse(client, monkeypatch):
+    from app.routers import live
+    monkeypatch.setattr(live, "_live_snapshot", lambda: [
+        {"event_id": "1", "home_team": "América", "away_team": "Chivas",
+         "home_score": 1, "away_score": 0, "status": "live", "clock": "55'"},
+    ])
+    with client.stream("GET", "/live/stream", params={"interval": 1, "max_seconds": 1}) as r:
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        got_data = False
+        lines = []
+        for line in r.iter_lines():
+            lines.append(line)
+            if "América" in line:
+                got_data = True
+                break
+    blob = "\n".join(lines)
+    assert got_data
+    assert "event: live" in blob

@@ -130,6 +130,9 @@ alembic revision --autogenerate -m "describe el cambio"
 ### Búsqueda global
 - `GET /search?q=&limit=` — **busca equipos, jugadores y estadios** a la vez por nombre (ignora acentos; los que empiezan por la consulta aparecen primero) 🆕
 
+### Tiempo real (SSE)
+- `GET /live/stream?interval=&max_seconds=` — **marcadores en vivo por streaming** (Server-Sent Events). El servidor empuja un evento `live` con los partidos en curso cuando cambian. Ej: `new EventSource("/live/stream")` 🆕
+
 ### Jugadores y estadísticas
 - `GET /players` — lista
 - `GET /players/search?q=&position=&nationality=&team_id=` — **búsqueda y filtros** (ignora acentos) 🆕
