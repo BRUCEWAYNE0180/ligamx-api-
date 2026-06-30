@@ -626,13 +626,51 @@ def run_sync(db, source: str = "espn"):
         db.rollback()
         logger.warning(f"Sync de eventos/alineaciones fallo (no critico): {e}")
 
-    # News sync (aislado para no invalidar el resto)
+    # News sync (aislado para no invalidar el resto): combina RSS + 365Scores.
     try:
         news_items = fetch_news(limit=50)
-        db.query(models.News).delete()
+        # 365Scores: feed propio de Liga MX (con imagen)
+        try:
+            from app.scrapers.scores365_scraper import Scores365Scraper
+
+            def _parse_365_date(v):
+                if not v:
+                    return None
+                try:
+                    return datetime.fromisoformat(v).replace(tzinfo=None)
+                except (ValueError, TypeError):
+                    return None
+
+            for n in Scores365Scraper().get_news(limit=30):
+                if n.get("url") and n.get("title"):
+                    news_items.append({
+                        "title": n["title"],
+                        "link": n["url"],
+                        "description": n["title"],
+                        "source": "365Scores",
+                        "image_url": n.get("image"),
+                        "published_at": _parse_365_date(n.get("published_at")),
+                    })
+        except Exception as e:
+            logger.warning(f"Noticias 365Scores fallaron (no critico): {e}")
+
+        # Dedup por enlace
+        seen, unique = set(), []
         for n in news_items:
-            db.add(models.News(**n))
+            link = n.get("link")
+            if not link or link in seen:
+                continue
+            seen.add(link)
+            unique.append(n)
+
+        db.query(models.News).delete()
+        for n in unique:
+            db.add(models.News(
+                title=n.get("title"), link=n.get("link"), description=n.get("description"),
+                source=n.get("source"), image_url=n.get("image_url"), published_at=n.get("published_at"),
+            ))
         db.commit()
+        logger.info(f"Noticias sincronizadas: {len(unique)} (RSS + 365Scores)")
     except Exception as e:
         db.rollback()
         logger.warning(f"Sync de noticias fallo (no critico): {e}")

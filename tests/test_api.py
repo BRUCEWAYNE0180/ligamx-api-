@@ -605,3 +605,20 @@ def test_xg_performance(client, seeded, db):
     assert top["player"] == "Henry Martín"
     assert top["goals"] == 2 and top["xg"] == 1.2
     assert top["diff"] == 0.8  # 2 goles - 1.2 xG (sobre-rendimiento)
+
+
+
+# ---------- Noticias con imagen (RSS + 365Scores unificados) ----------
+
+def test_news_incluye_imagen(client, db):
+    from datetime import datetime
+    from app import models
+    db.add(models.News(title="Gol de último minuto", link="http://x/n1",
+                       description="...", source="365Scores",
+                       image_url="http://img/portada.webp",
+                       published_at=datetime(2026, 7, 1)))
+    db.commit()
+    r = client.get("/news").json()
+    assert r[0]["title"] == "Gol de último minuto"
+    assert r[0]["image_url"] == "http://img/portada.webp"
+    assert r[0]["source"] == "365Scores"

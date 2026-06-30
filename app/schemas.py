@@ -88,6 +88,7 @@ class NewsResponse(BaseModel):
     link: str
     description: Optional[str] = None
     source: Optional[str] = None
+    image_url: Optional[str] = None
     published_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)

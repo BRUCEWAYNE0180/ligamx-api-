@@ -43,6 +43,19 @@ def _clean(text: str) -> str:
     return " ".join(text.split()).strip()
 
 
+def _entry_image(entry) -> str:
+    """Mejor esfuerzo para sacar la miniatura de una entrada RSS."""
+    media = entry.get("media_thumbnail") or entry.get("media_content")
+    if isinstance(media, list) and media:
+        url = media[0].get("url")
+        if url:
+            return url
+    for link in entry.get("links", []) or []:
+        if link.get("rel") == "enclosure" and str(link.get("type", "")).startswith("image"):
+            return link.get("href")
+    return None
+
+
 def fetch_news(limit: int = 50) -> List[Dict]:
     """Devuelve noticias recientes de Liga MX, deduplicadas por enlace."""
     news: List[Dict] = []
@@ -73,6 +86,7 @@ def fetch_news(limit: int = 50) -> List[Dict]:
                 "link": link,
                 "description": _clean(entry.get("summary", ""))[:500] or title,
                 "source": real_source,
+                "image_url": _entry_image(entry),
                 "published_at": _published_to_dt(entry),
             })
 

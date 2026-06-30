@@ -15,6 +15,7 @@ estadísticas, alineaciones, eventos en vivo, noticias y más.
 | **365Scores** (`webws.365scores.com`) | Fixtures/resultados frescos del Apertura, tabla, alineaciones con posiciones, eventos (goles/tarjetas/cambios) | ✅ Datos en vivo, no bloqueado |
 | **TheSportsDB** | Año de fundación, capacidad de estadios, escudos/jerseys (cruce por `idESPN`), **highlights en video + miniaturas** y calendario | ✅ Enriquecimiento + media |
 | **Google Noticias / ESPN (RSS)** | Noticias de Liga MX en español | ✅ Vía `feedparser` |
+| **365Scores (noticias)** | Feed propio de noticias de Liga MX (con imagen) | ✅ Unificado en `/news` |
 | **SofaScore** | Detalle de partidos / incidencias | ⚠️ Bloqueado por Cloudflare (403) desde servidores; endpoints quedan como *best-effort* |
 
 ---
@@ -176,7 +177,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /extras/teams/{espn_team_id}/assets` — assets de un equipo
 
 ### Noticias
-- `GET /news` — noticias de Liga MX (RSS, en español)
+- `GET /news` — noticias de Liga MX **unificadas** (RSS de Google/ESPN + feed propio de 365Scores), con **miniatura** (`image_url`) cuando está disponible 🆕
 
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
