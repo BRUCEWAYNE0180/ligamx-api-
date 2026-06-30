@@ -83,7 +83,7 @@ def get_team_form(team_id: int, limit: int = Query(5, ge=1, le=20), db: Session 
         .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
         .filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id))
         .filter(models.Match.status == "finished")
-        .filter(models.Match.home_score != None, models.Match.away_score != None)
+        .filter(models.Match.home_score.isnot(None), models.Match.away_score.isnot(None))
         .order_by(models.Match.match_date.desc())
         .limit(limit)
         .all()

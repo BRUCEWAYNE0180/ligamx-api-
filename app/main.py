@@ -15,7 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 import subprocess
 
 from app.database import engine, Base
-from app import models
+from app import models  # noqa: F401  (registra los modelos en Base.metadata)
 from app.rate_limit import limiter
 from app.metrics import metrics
 from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras, search, live

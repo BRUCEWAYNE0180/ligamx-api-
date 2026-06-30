@@ -55,7 +55,7 @@ def get_h2h_summary(team1_id: int, team2_id: int, db: Session = Depends(get_db))
         (((models.Match.home_team_id == team1_id) & (models.Match.away_team_id == team2_id)) |
          ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))),
         models.Match.status == "finished",
-        models.Match.home_score != None, models.Match.away_score != None,
+        models.Match.home_score.isnot(None), models.Match.away_score.isnot(None),
     ).all()
 
     t1_wins = t2_wins = draws = t1_goals = t2_goals = 0
@@ -159,13 +159,13 @@ def get_match_cards(match_id: int, db: Session = Depends(get_db)):
 
 @router.get("/weeks")
 def get_weeks(db: Session = Depends(get_db)):
-    weeks = db.query(models.Match.week_number).filter(models.Match.week_number != None).distinct().order_by(models.Match.week_number).all()
+    weeks = db.query(models.Match.week_number).filter(models.Match.week_number.isnot(None)).distinct().order_by(models.Match.week_number).all()
     return [w[0] for w in weeks]
 
 @router.get("/weeks/current")
 def get_current_week(db: Session = Depends(get_db)):
     today = datetime.utcnow().date()
-    matches = db.query(models.Match).filter(models.Match.match_date != None).order_by(models.Match.match_date).all()
+    matches = db.query(models.Match).filter(models.Match.match_date.isnot(None)).order_by(models.Match.match_date).all()
     if not matches:
         raise HTTPException(status_code=404, detail="No hay partidos")
     def week_start(date):

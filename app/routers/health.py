@@ -36,7 +36,7 @@ def season_info(db: Session = Depends(get_db)):
     finished = db.query(models.Match).filter(models.Match.status == "finished").count()
     first = (
         db.query(models.Match)
-        .filter(models.Match.match_date != None)
+        .filter(models.Match.match_date.isnot(None))
         .order_by(models.Match.match_date)
         .first()
     )
