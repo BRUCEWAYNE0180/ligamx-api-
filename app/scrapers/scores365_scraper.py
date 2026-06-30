@@ -141,40 +141,41 @@ class Scores365Scraper(BaseScraper):
         return list(stadiums.values())
 
     def get_players(self, competitor_ids: List[int] = None) -> List[Dict]:
-        # Mejor esfuerzo: roster por equipo. Si el endpoint falla, no rompe el sync.
-        players = []
-        teams = self.get_teams()
-        for t in teams:
-            try:
-                data = self._get_json("squads/", {"competitor": t["id"]})
-            except Exception:
-                continue
-            for ath in data.get("squads", []) or data.get("athletes", []):
-                aid = ath.get("id") or ath.get("athleteId")
-                players.append({
-                    "id": int(aid) if aid else None,
-                    "name": ath.get("name", ""),
-                    "team_name": t["name"],
-                    "position": (ath.get("position") or {}).get("name") if isinstance(ath.get("position"), dict) else ath.get("positionName"),
-                    "number": ath.get("jerseyNumber"),
-                    "nationality": None,
-                    "birth_date": None,
-                    "photo_url": None,
-                })
-            time.sleep(0.1)
-        return players
+        # 365Scores no expone un endpoint de plantilla estable (404/500),
+        # por lo que los rosters se obtienen de ESPN. Se devuelve vacio para
+        # no bloquear el sync. (Los jugadores que SI aporta 365Scores salen
+        # del detalle de cada partido via get_match_lineups.)
+        logger.info("365scores get_players: rosters no disponibles via API; usar ESPN")
+        return []
 
     def get_matches(self, season_id: int = None) -> List[Dict]:
+        # Detecta la temporada vigente (seasonNum mas frecuente en fixtures)
+        # para NO mezclar torneos (ej. Clausura vs Apertura).
+        current_season = season_id
+        try:
+            fixtures = self._get_json("games/fixtures/", {"competitions": COMPETITION_ID})
+            if current_season is None:
+                from collections import Counter
+                counts = Counter(g.get("seasonNum") for g in fixtures.get("games", []) if g.get("seasonNum") is not None)
+                current_season = counts.most_common(1)[0][0] if counts else None
+        except Exception as e:
+            logger.warning(f"365scores fixtures fallo: {e}")
+            fixtures = {"games": []}
+
         matches = {}
-        for endpoint in ("games/fixtures/", "games/results/"):
-            try:
-                data = self._get_json(endpoint, {"competitions": COMPETITION_ID})
-            except Exception as e:
-                logger.warning(f"365scores {endpoint} fallo: {e}")
-                continue
+        sources = [fixtures]
+        try:
+            sources.append(self._get_json("games/results/", {"competitions": COMPETITION_ID}))
+        except Exception as e:
+            logger.warning(f"365scores results fallo: {e}")
+
+        for data in sources:
             for g in data.get("games", []):
                 gid = g.get("id")
                 if not gid or gid in matches:
+                    continue
+                # Filtra a la temporada vigente (Apertura 2026)
+                if current_season is not None and g.get("seasonNum") != current_season:
                     continue
                 home = g.get("homeCompetitor", {})
                 away = g.get("awayCompetitor", {})
@@ -191,6 +192,7 @@ class Scores365Scraper(BaseScraper):
                     "match_date": _parse_date(g.get("startTime")),
                     "status": _status_from_group(g),
                     "week": g.get("roundNum"),
+                    "season_num": g.get("seasonNum"),
                 }
         return list(matches.values())
 
