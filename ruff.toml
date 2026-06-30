@@ -1,0 +1,14 @@
+# Configuración de Ruff para el proyecto.
+#
+# Reglas ignoradas a propósito:
+# - E701/E401: los scrapers usan one-liners compactos (varias sentencias/imports
+#   en una línea) de forma intencional para densidad.
+# - E402 en app/main.py: `load_dotenv()` DEBE ejecutarse antes de los imports que
+#   leen variables de entorno, así que esos imports no pueden ir al inicio.
+line-length = 200
+
+[lint]
+ignore = ["E701", "E401"]
+
+[lint.per-file-ignores]
+"app/main.py" = ["E402"]

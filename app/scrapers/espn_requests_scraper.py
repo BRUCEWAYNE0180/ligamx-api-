@@ -1,4 +1,4 @@
-import time, requests, re, logging
+import time, requests, logging
 from datetime import datetime, timezone
 from typing import List, Dict
 from app.scrapers.base import BaseScraper
