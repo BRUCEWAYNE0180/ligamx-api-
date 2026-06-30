@@ -77,3 +77,37 @@ def test_sync_status_sin_datos(client):
     assert r["has_data"] is False
     assert r["last_sync"] is None
     assert r["last_successful_sync"] is None
+
+
+
+def test_match_timeline(client, seeded):
+    r = client.get("/matches/1/timeline")
+    assert r.status_code == 200
+    eventos = r.json()
+    assert len(eventos) == 2
+    # ordenados por minuto: gol (23') antes que tarjeta (55')
+    assert eventos[0]["event_type"] == "goal" and eventos[0]["event_time"] == 23
+    tipos = {e["event_type"] for e in eventos}
+    assert "yellow_card" in tipos
+
+
+def test_match_squad(client, seeded):
+    r = client.get("/matches/1/squad").json()
+    equipos = {t["team_id"]: t for t in r["teams"]}
+    assert 1 in equipos
+    assert equipos[1]["starters"][0]["player_name"] == "Henry Martín"
+    assert equipos[1]["starters"][0]["jersey_number"] == 21
+
+
+def test_match_full(client, seeded):
+    r = client.get("/matches/1/full").json()
+    assert r["id"] == 1
+    assert r["score"] == {"home": 2, "away": 1}
+    assert len(r["timeline"]) == 2
+    assert len(r["lineups"]) >= 1
+    assert len(r["stats"]) == 1
+    assert r["stats"][0]["possession"] == 58.0
+
+
+def test_match_full_404(client, seeded):
+    assert client.get("/matches/999/full").status_code == 404

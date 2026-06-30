@@ -67,6 +67,7 @@ class Match(Base):
     away_score = Column(Integer, nullable=True)
     status = Column(String, default="scheduled")
     sofascore_event_id = Column(Integer, nullable=True, index=True)
+    external_event_id = Column(String, nullable=True, index=True)  # id del partido en la fuente (ESPN/365)
     
     season = relationship("Season", back_populates="matches")
     week = relationship("Week", back_populates="matches")

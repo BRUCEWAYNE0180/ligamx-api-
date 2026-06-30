@@ -154,3 +154,115 @@ def get_current_week(db: Session = Depends(get_db)):
         return {"week_number": first_match.week_number, "start_date": str(week_start(first_date)), "note": "Temporada aun no inicia"}
     last_match = matches[-1]
     return {"week_number": last_match.week_number, "note": "Temporada finalizada"}
+
+
+
+# ---------- Detalle persistido por partido (desde la BD) ----------
+
+@cached(30)
+def _fetch_live(event_id: str):
+    return ESPNRequestsScraper().get_match_live(event_id)
+
+
+@router.get("/matches/{match_id}/timeline", response_model=list[schemas.MatchEventResponse])
+def get_match_timeline(match_id: int, db: Session = Depends(get_db)):
+    """Linea de tiempo del partido (guardada en BD): goles, tarjetas
+    amarillas/rojas y cambios, ordenados por minuto."""
+    get_or_404(db, models.Match, match_id)
+    return (
+        db.query(models.MatchEvent)
+        .filter(models.MatchEvent.match_id == match_id)
+        .order_by(models.MatchEvent.event_time.is_(None), models.MatchEvent.event_time)
+        .all()
+    )
+
+
+@router.get("/matches/{match_id}/squad")
+def get_match_squad(match_id: int, db: Session = Depends(get_db)):
+    """Alineaciones guardadas del partido: titulares y suplentes por equipo,
+    con posicion y dorsal."""
+    get_or_404(db, models.Match, match_id)
+    rows = db.query(models.MatchLineup).filter(models.MatchLineup.match_id == match_id).all()
+    teams = {}
+    for r in rows:
+        t = teams.setdefault(r.team_id, {
+            "team_id": r.team_id, "team_name": r.team_name,
+            "starters": [], "substitutes": [],
+        })
+        entry = {
+            "player_id": r.player_id, "player_name": r.player_name,
+            "position": r.position, "jersey_number": r.jersey_number,
+        }
+        (t["substitutes"] if r.is_substitute else t["starters"]).append(entry)
+    return {"match_id": match_id, "teams": list(teams.values())}
+
+
+@router.get("/matches/{match_id}/full")
+def get_match_full(match_id: int, db: Session = Depends(get_db)):
+    """TODO el detalle de un partido en una sola respuesta: equipos, marcador,
+    estado, linea de tiempo (eventos), alineaciones y estadisticas."""
+    match = (
+        db.query(models.Match)
+        .options(joinedload(models.Match.home_team), joinedload(models.Match.away_team))
+        .filter(models.Match.id == match_id)
+        .first()
+    )
+    if not match:
+        raise HTTPException(status_code=404, detail="Partido no encontrado")
+
+    events = (
+        db.query(models.MatchEvent)
+        .filter(models.MatchEvent.match_id == match_id)
+        .order_by(models.MatchEvent.event_time.is_(None), models.MatchEvent.event_time)
+        .all()
+    )
+    lineup_rows = db.query(models.MatchLineup).filter(models.MatchLineup.match_id == match_id).all()
+    lineups = {}
+    for r in lineup_rows:
+        t = lineups.setdefault(r.team_id, {
+            "team_id": r.team_id, "team_name": r.team_name,
+            "starters": [], "substitutes": [],
+        })
+        entry = {"player_id": r.player_id, "player_name": r.player_name,
+                 "position": r.position, "jersey_number": r.jersey_number}
+        (t["substitutes"] if r.is_substitute else t["starters"]).append(entry)
+
+    stats = []
+    if match.external_event_id:
+        stats = db.query(models.MatchStat).filter(models.MatchStat.event_id == match.external_event_id).all()
+
+    def ev(e):
+        return {"minute": e.event_time, "type": e.event_type, "description": e.description,
+                "player": e.player_name, "team_id": e.team_id, "team_name": e.team_name,
+                "is_home": e.is_home}
+
+    def stat(s):
+        return {"team_id": s.team_id, "team_name": s.team_name, "possession": s.possession,
+                "shots": s.shots, "shots_on_target": s.shots_on_target, "corners": s.corners,
+                "fouls": s.fouls, "yellow_cards": s.yellow_cards, "red_cards": s.red_cards}
+
+    return {
+        "id": match.id,
+        "status": match.status,
+        "match_date": match.match_date,
+        "week_number": match.week_number,
+        "home_team": {"id": match.home_team_id, "name": match.home_team.name if match.home_team else None},
+        "away_team": {"id": match.away_team_id, "name": match.away_team.name if match.away_team else None},
+        "score": {"home": match.home_score, "away": match.away_score},
+        "timeline": [ev(e) for e in events],
+        "lineups": list(lineups.values()),
+        "stats": [stat(s) for s in stats],
+        "external_event_id": match.external_event_id,
+    }
+
+
+@router.get("/matches/{match_id}/live")
+def get_match_live(match_id: int, db: Session = Depends(get_db)):
+    """Marcador EN VIVO del partido (goles, reloj, periodo y estado), consultado
+    en el momento a la fuente. Cacheado 30s para no saturar."""
+    match = get_or_404(db, models.Match, match_id)
+    if not match.external_event_id:
+        raise HTTPException(status_code=404, detail="Este partido no tiene id externo para datos en vivo")
+    live = _fetch_live(match.external_event_id)
+    live["match_id"] = match_id
+    return live

@@ -97,6 +97,10 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /matches/team/{team_id}` — por equipo
 - `GET /matches/week/{n}` — por jornada
 - `GET /matches/{id}` — detalle
+- `GET /matches/{id}/timeline` — **línea de tiempo guardada**: goles, tarjetas y cambios 🆕
+- `GET /matches/{id}/squad` — **alineaciones guardadas** (titulares/suplentes, posición, dorsal) 🆕
+- `GET /matches/{id}/full` — **TODO el partido en una respuesta** (marcador, eventos, alineaciones, stats) 🆕
+- `GET /matches/{id}/live` — **marcador EN VIVO** (goles, reloj, periodo, estado) 🆕
 - `GET /matches/{event_id}/stats` — estadísticas del partido (ESPN)
 - `GET /matches/{event_id}/lineups` — alineaciones (ESPN)
 - `GET /matches/{event_id}/events` — eventos clave (goles/tarjetas/cambios)
@@ -211,3 +215,11 @@ El **sync** es seguro por diseño: primero descarga todo a memoria (FETCH); si u
 fuente crítica falla, **aborta sin tocar la BD**. La escritura ocurre en una sola
 transacción (WRITE) y el enriquecimiento (stats, assets, noticias) corre aislado
 (ENRICH), de modo que un fallo ahí no invalida el resto.
+
+### Qué se guarda en la base de datos
+
+Equipos, estadios, jugadores, temporada, jornadas, partidos, tabla de posiciones,
+goleadores, estadísticas por equipo y por jugador, noticias y, por cada partido
+jugado, su **línea de tiempo completa** (goles, **tarjetas amarillas y rojas**,
+cambios) y sus **alineaciones** (titulares y suplentes con posición y dorsal).
+El marcador en vivo se consulta en el momento a la fuente (con caché corto).
