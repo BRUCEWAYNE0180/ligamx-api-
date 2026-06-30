@@ -111,3 +111,25 @@ def test_match_full(client, seeded):
 
 def test_match_full_404(client, seeded):
     assert client.get("/matches/999/full").status_code == 404
+
+
+
+def test_discipline(client, seeded):
+    r = client.get("/discipline").json()
+    assert "players" in r and "teams" in r
+    # el seed tiene una amarilla de "Rival X" (Chivas)
+    nombres = {p["player"] for p in r["players"]}
+    assert "Rival X" in nombres
+    rival = [p for p in r["players"] if p["player"] == "Rival X"][0]
+    assert rival["yellow_cards"] == 1 and rival["red_cards"] == 0
+
+
+def test_root_tiene_dashboard(client):
+    r = client.get("/").json()
+    assert r["dashboard"] == "/app"
+
+
+def test_dashboard_carga(client):
+    r = client.get("/app/")
+    assert r.status_code == 200
+    assert "Liga MX" in r.text

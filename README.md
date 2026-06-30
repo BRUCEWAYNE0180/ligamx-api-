@@ -30,6 +30,10 @@ uvicorn app.main:app --reload
 
 Documentación interactiva (Swagger): **http://localhost:8000/docs**
 
+**Dashboard web**: **http://localhost:8000/app** — un tablero visual servido por la
+propia API (en vivo, tabla con zonas de Liguilla, próximos partidos, goleadores,
+disciplina y noticias).
+
 ### Cargar datos
 
 ```bash
@@ -116,6 +120,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /standings` — tabla de posiciones
 - `GET /liguilla` — **clasificación a Liguilla / Play-In** (formato Liga MX) 🆕
 - `GET /top-scorers?season=` — tabla de goleo
+- `GET /discipline` — **tabla de disciplina (tarjetas)** por jugador y por equipo 🆕
 
 ### Jugadores y estadísticas
 - `GET /players` — lista

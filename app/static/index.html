@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liga MX API · Dashboard</title>
+<style>
+  :root{
+    --bg:#0b1020; --card:#141b2e; --card2:#1b2440; --txt:#e8ecf5; --muted:#8d97b0;
+    --green:#1db954; --yellow:#f5c518; --red:#e4434b; --accent:#2a7de1; --line:#26304d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+  header{padding:22px 18px;background:linear-gradient(120deg,#0f7a3d,#0b1020);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;letter-spacing:.3px}
+  .badge{background:#0006;border:1px solid #ffffff22;padding:5px 10px;border-radius:999px;font-size:13px;color:#fff}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;overflow:hidden}
+  .card h2{margin:0 0 12px;font-size:15px;color:#fff;display:flex;align-items:center;gap:8px}
+  .span2{grid-column:1 / -1}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  td.num,th.num{text-align:center}
+  .pos{width:26px;text-align:center;font-weight:700;border-radius:6px}
+  .z-liguilla{box-shadow:inset 3px 0 0 var(--green)}
+  .z-playin{box-shadow:inset 3px 0 0 var(--yellow)}
+  .logo{width:20px;height:20px;vertical-align:middle;margin-right:7px;border-radius:4px;background:#fff2}
+  .row-team{display:flex;align-items:center;gap:2px}
+  .muted{color:var(--muted)}
+  .match{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);gap:10px}
+  .match:last-child{border-bottom:0}
+  .score{font-weight:700;background:var(--card2);padding:3px 9px;border-radius:7px;min-width:54px;text-align:center}
+  .live{color:var(--red);font-weight:700;font-size:11px;animation:blink 1.3s infinite}
+  @keyframes blink{50%{opacity:.4}}
+  a{color:var(--accent);text-decoration:none}
+  .news-item{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .empty{color:var(--muted);font-size:13px;padding:10px 2px}
+  .legend{font-size:11px;color:var(--muted);margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+  @media(max-width:720px){.wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ Liga MX API</h1>
+  <span class="badge" id="seasonBadge">cargando…</span>
+  <span class="badge" id="statusBadge"></span>
+  <span style="flex:1"></span>
+  <a class="badge" href="/docs">📑 Docs (Swagger)</a>
+</header>
+
+<div class="wrap">
+  <section class="card span2">
+    <h2>🔴 En vivo</h2>
+    <div id="live"><div class="empty">Buscando partidos en vivo…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>📊 Tabla general</h2>
+    <div id="standings"><div class="empty">Cargando…</div></div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--green)"></span>Liguilla (1-6)</span>
+      <span><span class="dot" style="background:var(--yellow)"></span>Play-In (7-10)</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>🗓️ Próximos partidos</h2>
+    <div id="upcoming"><div class="empty">Cargando…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>🥅 Goleadores</h2>
+    <div id="scorers"><div class="empty">Cargando…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>🟨🟥 Disciplina</h2>
+    <div id="discipline"><div class="empty">Cargando…</div></div>
+  </section>
+
+  <section class="card span2">
+    <h2>📰 Noticias</h2>
+    <div id="news"><div class="empty">Cargando…</div></div>
+  </section>
+</div>
+
+<footer>Servido por Liga MX API · datos de ESPN · 365Scores · TheSportsDB</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const empty = (msg) => `<div class="empty">${msg}</div>`;
+
+async function getJSON(path){
+  try{ const r = await fetch(path); if(!r.ok) return null; return await r.json(); }
+  catch(e){ return null; }
+}
+
+async function loadSeason(){
+  const s = await getJSON('/season');
+  if(s){
+    $('seasonBadge').textContent = s.loaded_season || s.tournament_now || 'Liga MX';
+    $('statusBadge').textContent = s.has_started ? '🟢 En curso'
+      : (s.total_matches ? '⏳ Por iniciar' : 'sin datos');
+  } else { $('seasonBadge').textContent = 'Liga MX'; }
+}
+
+async function loadLive(){
+  const live = await getJSON('/matches/live');
+  if(!live || !live.length){ $('live').innerHTML = empty('No hay partidos en vivo ahora mismo.'); return; }
+  $('live').innerHTML = live.map(m => `
+    <div class="match">
+      <span>${m.home_team ?? ''}</span>
+      <span class="score">${m.home_score ?? 0} - ${m.away_score ?? 0}</span>
+      <span>${m.away_team ?? ''}</span>
+      <span class="live">● ${m.clock ?? 'EN VIVO'}</span>
+    </div>`).join('');
+}
+
+function teamCell(name, logo){
+  return `<span class="row-team">${logo?`<img class="logo" src="${logo}">`:''}${name ?? ''}</span>`;
+}
+
+async function loadStandings(){
+  const rows = await getJSON('/standings');
+  if(!rows || !rows.length){ $('standings').innerHTML = empty('La tabla aparecerá cuando inicie el torneo.'); return; }
+  const body = rows.map(r => {
+    const zone = r.position<=6 ? 'z-liguilla' : (r.position<=10 ? 'z-playin' : '');
+    return `<tr>
+      <td class="pos ${zone}">${r.position}</td>
+      <td>${teamCell(r.team?.name, r.team?.logo_url)}</td>
+      <td class="num">${r.played}</td>
+      <td class="num">${r.goal_difference}</td>
+      <td class="num"><b>${r.points}</b></td>
+    </tr>`;
+  }).join('');
+  $('standings').innerHTML = `<table><thead><tr><th>#</th><th>Equipo</th><th class="num">J</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadUpcoming(){
+  const ms = await getJSON('/matches/upcoming?limit=8');
+  if(!ms || !ms.length){ $('upcoming').innerHTML = empty('Sin próximos partidos cargados todavía.'); return; }
+  $('upcoming').innerHTML = ms.map(m => {
+    const d = m.match_date ? new Date(m.match_date) : null;
+    const when = d ? d.toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="match">
+      <span>${teamCell(m.home_team?.name, m.home_team?.logo_url)}</span>
+      <span class="muted">vs</span>
+      <span>${teamCell(m.away_team?.name, m.away_team?.logo_url)}</span>
+      <span class="muted" style="font-size:11px">${when}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadScorers(){
+  const s = await getJSON('/top-scorers?limit=10');
+  if(!s || !s.length){ $('scorers').innerHTML = empty('Aún sin goles registrados.'); return; }
+  $('scorers').innerHTML = `<table><tbody>${s.map((p,i)=>`
+    <tr><td class="num">${i+1}</td><td>${p.player}</td><td class="muted">${p.team??''}</td><td class="num"><b>${p.goals}</b> ⚽</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function loadDiscipline(){
+  const d = await getJSON('/discipline');
+  if(!d || !d.players || !d.players.length){ $('discipline').innerHTML = empty('Sin tarjetas registradas todavía.'); return; }
+  $('discipline').innerHTML = `<table><tbody>${d.players.slice(0,10).map(p=>`
+    <tr><td>${p.player}</td><td class="muted">${p.team??''}</td><td class="num">🟨 ${p.yellow_cards}</td><td class="num">🟥 ${p.red_cards}</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function loadNews(){
+  const n = await getJSON('/news?limit=8');
+  if(!n || !n.length){ $('news').innerHTML = empty('Sin noticias por ahora.'); return; }
+  $('news').innerHTML = n.map(x=>`<div class="news-item"><a href="${x.link}" target="_blank" rel="noopener">${x.title}</a> <span class="muted">· ${x.source??''}</span></div>`).join('');
+}
+
+loadSeason(); loadLive(); loadStandings(); loadUpcoming(); loadScorers(); loadDiscipline(); loadNews();
+setInterval(loadLive, 30000); // refresca el marcador en vivo cada 30s
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@ ligamx.db
 # Varios
 *.bak
 *.html
+!app/static/*.html
 .DS_Store
 
 # Archivos de trabajo temporales

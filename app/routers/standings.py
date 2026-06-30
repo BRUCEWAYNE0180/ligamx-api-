@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app import models, schemas
@@ -56,3 +57,70 @@ def get_liguilla(db: Session = Depends(get_db)):
         "play_in": play_in,
         "eliminados": eliminated,
     }
+
+
+
+@router.get("/discipline")
+def discipline(db: Session = Depends(get_db), limit: int = Query(20, ge=1, le=100)):
+    """Tabla de disciplina (fair play) a partir de las tarjetas guardadas en los
+    partidos: jugadores con mas tarjetas y totales por equipo."""
+    yellow = func.sum(case((models.MatchEvent.event_type == "yellow_card", 1), else_=0))
+    red = func.sum(case((models.MatchEvent.event_type == "red_card", 1), else_=0))
+
+    player_rows = (
+        db.query(
+            models.MatchEvent.player_name,
+            models.MatchEvent.team_name,
+            yellow.label("yellow"),
+            red.label("red"),
+        )
+        .filter(
+            models.MatchEvent.event_type.in_(["yellow_card", "red_card"]),
+            models.MatchEvent.player_name.isnot(None),
+        )
+        .group_by(models.MatchEvent.player_name, models.MatchEvent.team_name)
+        .all()
+    )
+    players = sorted(
+        [
+            {
+                "player": r.player_name,
+                "team": r.team_name,
+                "yellow_cards": int(r.yellow or 0),
+                "red_cards": int(r.red or 0),
+                "points": int(r.yellow or 0) + int(r.red or 0) * 2,  # roja pesa doble
+            }
+            for r in player_rows
+        ],
+        key=lambda x: (x["red_cards"], x["yellow_cards"]),
+        reverse=True,
+    )[:limit]
+
+    team_rows = (
+        db.query(
+            models.MatchEvent.team_name,
+            yellow.label("yellow"),
+            red.label("red"),
+        )
+        .filter(
+            models.MatchEvent.event_type.in_(["yellow_card", "red_card"]),
+            models.MatchEvent.team_name.isnot(None),
+        )
+        .group_by(models.MatchEvent.team_name)
+        .all()
+    )
+    teams = sorted(
+        [
+            {
+                "team": r.team_name,
+                "yellow_cards": int(r.yellow or 0),
+                "red_cards": int(r.red or 0),
+                "points": int(r.yellow or 0) + int(r.red or 0) * 2,
+            }
+            for r in team_rows
+        ],
+        key=lambda x: x["points"],
+        reverse=True,
+    )
+
+    return {"players": players, "teams": teams}

@@ -9,7 +9,8 @@ router = APIRouter()
 
 @router.get("/")
 def read_root():
-    return {"message": "API Liga MX", "version": "1.0", "status": "running"}
+    return {"message": "API Liga MX", "version": "1.0", "status": "running",
+            "dashboard": "/app", "docs": "/docs"}
 
 @router.get("/health")
 def health_check():

@@ -5,6 +5,7 @@ import os
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 import subprocess
 
@@ -51,3 +52,8 @@ app.include_router(sync.router)
 app.include_router(sofascore.router)
 app.include_router(scores365.router)
 app.include_router(extras.router)
+
+# Dashboard web (frontend estatico) servido por la propia API en /app
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/app", StaticFiles(directory=_static_dir, html=True), name="dashboard")
