@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
+from datetime import datetime
+import re
 import unicodedata
 from app.database import get_db
-from app.dependencies import get_or_404
+from app.dependencies import get_or_404, resolve_season_label
+from app.scrapers.espn_requests_scraper import ESPNRequestsScraper
+from app.cache import cached
 from app import models, schemas
 
 router = APIRouter()
+
+
+def _year_from_season(season: str) -> int:
+    """Extrae el ano de una etiqueta ('Apertura 2026') o de '2026'; si no hay,
+    usa el ano actual (para el core API de ESPN, que indexa por ano-temporada)."""
+    m = re.search(r"(20\d{2})", season or "")
+    return int(m.group(1)) if m else datetime.now().year
 
 @router.get("/teams", response_model=list[schemas.TeamResponse])
 def get_teams(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
@@ -33,11 +44,12 @@ def get_team_last_matches(team_id: int, limit: int = Query(5, ge=1, le=20), db: 
     return db.query(models.Match).options(joinedload(models.Match.home_team), joinedload(models.Match.away_team)).filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id)).order_by(models.Match.match_date.desc()).limit(limit).all()
 
 @router.get("/teams/{team_id}/stats")
-def get_team_stats(team_id: int, season: str = Query("2026"), db: Session = Depends(get_db)):
+def get_team_stats(team_id: int, season: str = Query(None), db: Session = Depends(get_db)):
     get_or_404(db, models.Team, team_id)
-    stats = db.query(models.MatchStat).filter(models.MatchStat.team_id == team_id, models.MatchStat.season == season).all()
+    label = resolve_season_label(db, season)
+    stats = db.query(models.MatchStat).filter(models.MatchStat.team_id == team_id, models.MatchStat.season == label).all()
     if not stats:
-        return {"team_id": team_id, "season": season, "matches": 0, "message": "No stats found"}
+        return {"team_id": team_id, "season": label, "matches": 0, "message": "No stats found"}
     totals = {"shots": 0, "shots_on_target": 0, "corners": 0, "fouls": 0, "yellow_cards": 0, "red_cards": 0}
     possession_sum = 0
     count = 0
@@ -48,7 +60,16 @@ def get_team_stats(team_id: int, season: str = Query("2026"), db: Session = Depe
         if s.possession:
             possession_sum += s.possession
             count += 1
-    return {"team_id": team_id, "season": season, "matches": len(stats), "possession_avg": round(possession_sum / count, 1) if count else None, "totals": totals}
+    return {"team_id": team_id, "season": label, "matches": len(stats), "possession_avg": round(possession_sum / count, 1) if count else None, "totals": totals}
+
+
+@router.get("/teams/{team_id}/season-stats")
+@cached(600)
+def get_team_season_stats(team_id: int, season: str = Query(None, description="Etiqueta o ano; por defecto el ano vigente")):
+    """Estadisticas de EQUIPO agregadas de la temporada via ESPN (~100 metricas:
+    porterias a cero, goles recibidos, pases completados, tackles, intercepciones,
+    duelos, etc.) en categorias defensive/general/goalKeeping/offensive."""
+    return ESPNRequestsScraper().get_team_season_stats(team_id, _year_from_season(season))
 
 
 

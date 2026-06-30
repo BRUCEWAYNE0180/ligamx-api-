@@ -351,3 +351,28 @@ class ESPNRequestsScraper(BaseScraper):
             "clock": status.get("displayClock"),
             "period": status.get("period"),
         }
+
+
+    def get_team_season_stats(self, team_id, year: int = None) -> Dict:
+        """Estadisticas de EQUIPO agregadas de la temporada (via el core API de
+        ESPN): ~100+ metricas en 4 categorias (defensive, general, goalKeeping,
+        offensive) -> porterias a cero, goles recibidos, pases completados,
+        tackles, intercepciones, etc. `year` es el ano-temporada de ESPN."""
+        year = year or datetime.now().year
+        url = (f"https://sports.core.api.espn.com/v2/sports/soccer/leagues/mex.1/"
+               f"seasons/{year}/types/1/teams/{team_id}/statistics")
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            logger.warning(f"team season stats {team_id} {year}: {e}")
+            return {"team_id": int(team_id), "season_year": year, "categories": {}}
+        categories = {}
+        for cat in data.get("splits", {}).get("categories", []):
+            name = cat.get("name")
+            if not name:
+                continue
+            categories[name] = {
+                s.get("name"): s.get("value")
+                for s in cat.get("stats", []) if s.get("name")
+            }
+        return {"team_id": int(team_id), "season_year": year, "categories": categories}
