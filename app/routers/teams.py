@@ -196,6 +196,51 @@ def get_team_discipline(team_id: int, season: str = Query(None), db: Session = D
     }
 
 
+@router.get("/teams/{team_id}/streak")
+def get_team_streak(team_id: int, db: Session = Depends(get_db)):
+    """Rachas actuales del equipo (desde los partidos finalizados, del mas reciente
+    hacia atras): invicto, victorias seguidas, sin ganar, anotando y porteria a cero."""
+    get_or_404(db, models.Team, team_id)
+    matches = (
+        db.query(models.Match)
+        .filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id))
+        .filter(models.Match.status == "finished")
+        .filter(models.Match.home_score.isnot(None), models.Match.away_score.isnot(None))
+        .order_by(models.Match.match_date.desc())
+        .all()
+    )
+    results = []
+    for m in matches:
+        is_home = m.home_team_id == team_id
+        gf = m.home_score if is_home else m.away_score
+        ga = m.away_score if is_home else m.home_score
+        outcome = "W" if gf > ga else ("L" if gf < ga else "D")
+        results.append({"result": outcome, "gf": gf, "ga": ga})
+
+    def run_while(pred):
+        n = 0
+        for r in results:
+            if pred(r):
+                n += 1
+            else:
+                break
+        return n
+
+    return {
+        "team_id": team_id,
+        "matches_played": len(results),
+        "recent_form": "".join(r["result"] for r in results[:5]),
+        "streaks": {
+            "unbeaten": run_while(lambda r: r["result"] in ("W", "D")),
+            "wins": run_while(lambda r: r["result"] == "W"),
+            "winless": run_while(lambda r: r["result"] in ("D", "L")),
+            "losses": run_while(lambda r: r["result"] == "L"),
+            "scoring": run_while(lambda r: r["gf"] > 0),
+            "clean_sheets": run_while(lambda r: r["ga"] == 0),
+        },
+    }
+
+
 @router.get("/teams/{team_id}/profile")
 def get_team_profile(team_id: int, season: str = Query(None), db: Session = Depends(get_db)):
     """Perfil completo del equipo en una llamada: ficha + sede, posicion en la

@@ -106,6 +106,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /teams/{id}/stats?season=` — promedios/totales de estadísticas
 - `GET /teams/{id}/season-stats?season=` — **~100 estadísticas del equipo en la temporada vía ESPN** (porterías a cero, goles recibidos, pases completados, tackles, intercepciones, duelos...) 🆕
 - `GET /teams/{id}/discipline?season=` — **disciplina del equipo**: totales de tarjetas + desglose por jugador y quién está en riesgo de suspensión 🆕
+- `GET /teams/{id}/streak` — **rachas actuales** del equipo (invicto, victorias, sin ganar, anotando, portería a cero) 🆕
 - `GET /teams/xg-performance?season=&order=over|under` — **goles vs xG por equipo** (efectivos vs desperdiciadores) 🆕
 
 ### Partidos
@@ -135,6 +136,7 @@ alembic revision --autogenerate -m "describe el cambio"
 ### Tabla y goleadores
 - `GET /seasons` — **temporadas/torneos disponibles** (histórico multi-temporada) 🆕
 - `GET /standings?season=` — tabla de posiciones (por defecto la temporada vigente) 🆕
+- `GET /standings/projection?season=` — **proyección de la tabla final** (puntos esperados de los partidos restantes vía Poisson) 🆕
 - `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)
 - `GET /liguilla/bracket?season=` — **cuadro oficial de Liguilla** (siembra Play-In + Cuartos 1v8/2v7/3v6/4v5, ida y vuelta) 🆕
 - `GET /top-scorers?season=` — tabla de goleo
@@ -171,6 +173,7 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /players/xg-performance?season=&order=over|under` — **goles vs xG**: quién finaliza por encima/debajo de lo esperado 🆕
 - `GET /players/discipline?season=&order=&at_risk=` — **tabla de disciplina**: tarjetas amarillas/rojas acumuladas por jugador, con riesgo de suspensión (regla Liga MX: 5 amarillas = 1 partido) 🆕
 - `GET /players/{id}/discipline?season=` — **tarjetas acumuladas de un jugador** y su estado de suspensión 🆕
+- `GET /players/{id}/form?last=&season=` — **forma reciente del jugador** (últimos N partidos: rating, goles, asistencias, racha de goleo) 🆕
 - `GET /player-stats?season=` — estadísticas agregadas
 
 ### Datos en vivo (365Scores)
