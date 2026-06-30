@@ -50,6 +50,11 @@ detectado en los datos no coincide con el esperado.
 - [x] Persistir **árbitros** (`Match.referee`, cruce con 365Scores).
 - [ ] Lesionados/suspendidos y disponibilidad por jornada.
 - [ ] Liguilla/Play-In real (bracket ida/vuelta), no solo la foto de la tabla.
+- [x] **Histórico multi-temporada**: el sync ya NO borra todo: hace *upsert* de
+      equipos/jugadores/estadios y reemplaza solo la temporada sincronizada, así
+      se acumulan torneos. `GET /seasons` lista los disponibles y casi todos los
+      endpoints aceptan `?season=` (etiqueta o año). Clave de temporada =
+      etiqueta completa ("Apertura 2026") para no mezclar los dos torneos del año.
 - [ ] Histórico multi-temporada consultable por endpoint.
 - [x] Persistir las stats por jugador del partido en BD (`player_match_stats`),
       con agregados de temporada (`/players/{id}/season-stats`), historial

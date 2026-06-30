@@ -114,9 +114,14 @@ alembic revision --autogenerate -m "describe el cambio"
 - `GET /weeks/current` — jornada actual
 
 ### Tabla y goleadores
-- `GET /standings` — tabla de posiciones
-- `GET /liguilla` — **clasificación a Liguilla / Play-In** (formato Liga MX) 🆕
+- `GET /seasons` — **temporadas/torneos disponibles** (histórico multi-temporada) 🆕
+- `GET /standings?season=` — tabla de posiciones (por defecto la temporada vigente) 🆕
+- `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)
 - `GET /top-scorers?season=` — tabla de goleo
+
+> El parámetro `season` acepta la etiqueta del torneo (`Apertura 2026`) o el año
+> (`2026`, devuelve el torneo más reciente de ese año). Sin `season`, se usa la
+> temporada vigente. Los partidos pueden filtrarse con `GET /matches?season=`.
 
 ### Jugadores y estadísticas
 - `GET /players` — lista

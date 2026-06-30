@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 import unicodedata
 from app.database import get_db
-from app.dependencies import get_or_404
+from app.dependencies import get_or_404, resolve_season_label
 from app import models, schemas
 
 router = APIRouter()
@@ -29,14 +29,15 @@ _LEADER_AGG = {
 
 
 @router.get("/players/top", response_model=list[schemas.PlayerStatResponse])
-def get_top_players(limit: int = Query(10, ge=1, le=100), season: str = Query("2026"), db: Session = Depends(get_db)):
-    return db.query(models.PlayerStat).filter(models.PlayerStat.season == season).order_by(models.PlayerStat.goals.desc()).limit(limit).all()
+def get_top_players(limit: int = Query(10, ge=1, le=100), season: str = Query(None), db: Session = Depends(get_db)):
+    label = resolve_season_label(db, season)
+    return db.query(models.PlayerStat).filter(models.PlayerStat.season == label).order_by(models.PlayerStat.goals.desc()).limit(limit).all()
 
 
 @router.get("/players/season-leaders")
 def season_leaders(
     stat: str = Query("goals", description="goals|assists|minutes|shots|xg|xa|key_passes|interceptions|touches|rating"),
-    season: str = Query("2026"),
+    season: str = Query(None),
     limit: int = Query(20, ge=1, le=100),
     min_appearances: int = Query(1, ge=0, description="filtra jugadores con pocas apariciones (util para 'rating')"),
     db: Session = Depends(get_db),
@@ -44,11 +45,12 @@ def season_leaders(
     """Tabla de lideres de temporada calculada desde las stats por partido
     persistidas (player_match_stats): goleadores, asistentes, minutos, xG, xA,
     rating promedio, etc. A diferencia de /365scores/leaders, sale de la BD."""
+    label = resolve_season_label(db, season)
     expr, _ = _LEADER_AGG.get(stat, _LEADER_AGG["goals"])
     M = models.PlayerMatchStat
     rows = (
         db.query(M.player_name, M.team_name, func.count(M.id).label("apps"), expr.label("value"))
-        .filter(M.season == season)
+        .filter(M.season == label)
         .group_by(M.player_name, M.team_name)
         .having(func.count(M.id) >= min_appearances)
         .order_by(expr.desc())
@@ -105,8 +107,9 @@ def get_player(player_id: int, db: Session = Depends(get_db)):
     return get_or_404(db, models.Player, player_id)
 
 @router.get("/players/{player_id}/stats", response_model=schemas.PlayerStatResponse)
-def get_player_stat(player_id: int, db: Session = Depends(get_db), season: str = Query("2026")):
-    stat = db.query(models.PlayerStat).filter(models.PlayerStat.player_id == player_id, models.PlayerStat.season == season).first()
+def get_player_stat(player_id: int, db: Session = Depends(get_db), season: str = Query(None)):
+    label = resolve_season_label(db, season)
+    stat = db.query(models.PlayerStat).filter(models.PlayerStat.player_id == player_id, models.PlayerStat.season == label).first()
     if not stat:
         raise HTTPException(status_code=404, detail="Estadisticas no encontradas")
     return stat
@@ -131,11 +134,12 @@ def get_player_match_stats(player_id: int, season: str = Query(None), db: Sessio
 
 
 @router.get("/players/{player_id}/season-stats")
-def get_player_season_stats(player_id: int, season: str = Query("2026"), db: Session = Depends(get_db)):
+def get_player_season_stats(player_id: int, season: str = Query(None), db: Session = Depends(get_db)):
     """Resumen agregado de la temporada del jugador (suma de partidos jugados):
     minutos, goles, asistencias, remates, xG, xA y rating promedio."""
     player = get_or_404(db, models.Player, player_id)
-    rows = _player_match_rows(db, player.name, season)
+    label = resolve_season_label(db, season)
+    rows = _player_match_rows(db, player.name, label)
     if not rows:
         raise HTTPException(status_code=404, detail="Sin estadisticas por partido para esta temporada")
 
@@ -147,7 +151,7 @@ def get_player_season_stats(player_id: int, season: str = Query("2026"), db: Ses
         "player_id": player_id,
         "player_name": player.name,
         "team_id": player.team_id,
-        "season": season,
+        "season": label,
         "appearances": len(rows),
         "starts": sum(1 for r in rows if r.starter),
         "minutes": _sum("minutes"),
