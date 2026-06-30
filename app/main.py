@@ -10,7 +10,7 @@ import subprocess
 
 from app.database import engine, Base
 from app import models
-from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365
+from app.routers import health, teams, matches, standings, stadiums, players, stats, news, sync, sofascore, scores365, extras
 
 Base.metadata.create_all(bind=engine)
 
@@ -46,3 +46,4 @@ app.include_router(news.router)
 app.include_router(sync.router)
 app.include_router(sofascore.router)
 app.include_router(scores365.router)
+app.include_router(extras.router)
