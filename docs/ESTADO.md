@@ -88,6 +88,9 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- Noticias **unificadas** en `/news`: RSS (Google/ESPN) + feed propio de 365Scores,
+  con miniatura (`image_url`). (Nota: el scraping de Flashscore se retiró hace
+  tiempo por frágil/pesado; se reemplazó por RSS.)
 - `GET /calendar`: calendario por jornada con rival, sede oficial y marcador.
 - `GET /365scores/news`: noticias de Liga MX (feed propio de 365Scores).
 - `GET /players/xg-performance`: rendimiento goles vs xG (sobre/bajo-rendimiento).
