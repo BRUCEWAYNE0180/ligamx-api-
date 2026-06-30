@@ -195,6 +195,8 @@ class Scores365Scraper(BaseScraper):
                     "match_date": _parse_date(g.get("startTime")),
                     "status": _status_from_group(g),
                     "week": g.get("roundNum"),
+                    "round_name": g.get("roundName"),
+                    "stage_name": g.get("stageName"),
                     "season_num": g.get("seasonNum"),
                 }
         return list(matches.values())
