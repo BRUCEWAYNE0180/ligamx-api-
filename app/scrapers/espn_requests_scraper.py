@@ -240,3 +240,82 @@ class ESPNRequestsScraper(BaseScraper):
                 "long_balls": _num("accurateLongBalls"),
             })
         return stats
+
+
+    def get_match_lineups(self, event_id: str) -> Dict:
+        """Alineaciones del partido (titulares, suplentes, formacion y posiciones)
+        a partir del endpoint summary de ESPN."""
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={event_id}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            logger.warning(f"match lineups {event_id}: {e}")
+            return {"event_id": event_id, "teams": []}
+        teams = []
+        for r in data.get("rosters", []):
+            starters, bench = [], []
+            for pl in r.get("roster", []):
+                ath = pl.get("athlete", {}) or {}
+                pos = pl.get("position", {}) or {}
+                jersey = pl.get("jersey")
+                player = {
+                    "player_id": int(ath["id"]) if ath.get("id") else None,
+                    "name": ath.get("displayName"),
+                    "jersey": int(jersey) if jersey not in (None, "") else None,
+                    "position": pos.get("abbreviation") or pos.get("name"),
+                    "formation_place": pl.get("formationPlace"),
+                    "subbed_in": bool(pl.get("subbedIn")),
+                    "subbed_out": bool(pl.get("subbedOut")),
+                }
+                (starters if pl.get("starter") else bench).append(player)
+            teams.append({
+                "team_name": r.get("team", {}).get("displayName"),
+                "home_away": r.get("homeAway"),
+                "formation": r.get("formation"),
+                "starters": starters,
+                "substitutes": bench,
+            })
+        return {"event_id": event_id, "teams": teams}
+
+    def get_match_events(self, event_id: str) -> List[Dict]:
+        """Eventos clave del partido: goles, tarjetas (amarillas/rojas) y cambios."""
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/summary?event={event_id}"
+        try:
+            data = self._get_json(url)
+        except Exception as e:
+            logger.warning(f"match events {event_id}: {e}")
+            return []
+        events = []
+        for k in data.get("keyEvents", []):
+            type_text = (k.get("type", {}) or {}).get("text", "")
+            participants = k.get("participants") or []
+            player = participants[0].get("athlete", {}).get("displayName") if participants else None
+            lower = type_text.lower()
+            if "card" in lower:
+                if "yellow" in lower:
+                    category = "yellow_card"
+                elif "red" in lower:
+                    category = "red_card"
+                else:
+                    category = "card"
+            elif k.get("scoringPlay") or "goal" in lower:
+                category = "goal"
+            elif "substitution" in lower:
+                category = "substitution"
+            else:
+                category = "other"
+            events.append({
+                "type": type_text,
+                "category": category,
+                "minute": (k.get("clock", {}) or {}).get("displayValue"),
+                "period": (k.get("period", {}) or {}).get("number") if isinstance(k.get("period"), dict) else k.get("period"),
+                "team_name": (k.get("team", {}) or {}).get("displayName"),
+                "player": player,
+                "scoring_play": bool(k.get("scoringPlay")),
+            })
+        return events
+
+    def get_match_cards(self, event_id: str) -> List[Dict]:
+        """Solo tarjetas (amarillas y rojas) del partido."""
+        return [e for e in self.get_match_events(event_id)
+                if e["category"] in ("yellow_card", "red_card")]
