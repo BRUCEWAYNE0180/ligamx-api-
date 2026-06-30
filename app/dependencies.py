@@ -1,10 +1,9 @@
 import os
 from fastapi import Header, HTTPException
 
-SYNC_API_KEY = os.environ.get("SYNC_API_KEY")
-
 def verify_api_key(api_key: str = Header(..., alias="X-API-Key")):
-    if api_key != SYNC_API_KEY:
+    sync_api_key = os.environ.get("SYNC_API_KEY")
+    if api_key != sync_api_key:
         raise HTTPException(status_code=403, detail="API Key invalida")
     return api_key
 
