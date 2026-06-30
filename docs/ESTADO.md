@@ -69,6 +69,7 @@ detectado en los datos no coincide con el esperado.
       (`/players/{id}/match-stats`) y tabla de líderes (`/players/season-leaders`).
 
 ### Plataforma
+- [x] Búsqueda global (`GET /search?q=`) sobre equipos, jugadores y estadios.
 - [ ] Redis para caché compartido entre workers + rate limiting.
 - [ ] Streaming en vivo (SSE/WebSocket) en lugar de polling.
 - [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
