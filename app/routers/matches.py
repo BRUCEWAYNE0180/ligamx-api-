@@ -1,6 +1,6 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.dependencies import get_or_404
 from app import models, schemas
@@ -17,16 +17,16 @@ def get_matches(db: Session = Depends(get_db), team_id: int = Query(None), week:
         q = q.filter(models.Match.week_number == week)
     if status:
         q = q.filter(models.Match.status == status)
-    return q.order_by(models.Match.match_date).all()
+    return q.order_by(models.Match.match_date).offset(offset).limit(limit).all()
 
 @router.get("/matches/team/{team_id}", response_model=list[schemas.MatchResponse])
-def get_team_matches(team_id: int, db: Session = Depends(get_db)):
+def get_team_matches(team_id: int, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     get_or_404(db, models.Team, team_id)
-    return db.query(models.Match).filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id)).order_by(models.Match.match_date).all()
+    return db.query(models.Match).options(joinedload(models.Match.home_team),joinedload(models.Match.away_team)).filter((models.Match.home_team_id == team_id) | (models.Match.away_team_id == team_id)).order_by(models.Match.match_date).offset(offset).limit(limit).all()
 
 @router.get("/matches/week/{week_number}", response_model=list[schemas.MatchResponse])
-def get_matches_by_week(week_number: int, db: Session = Depends(get_db)):
-    return db.query(models.Match).filter(models.Match.week_number == week_number).order_by(models.Match.match_date).all()
+def get_matches_by_week(week_number: int, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    return db.query(models.Match).options(joinedload(models.Match.home_team),joinedload(models.Match.away_team)).filter(models.Match.week_number == week_number).order_by(models.Match.match_date).offset(offset).limit(limit).all()
 
 @router.get("/h2h/{team1_id}/{team2_id}", response_model=list[schemas.MatchResponse])
 def get_h2h(team1_id: int, team2_id: int, db: Session = Depends(get_db)):

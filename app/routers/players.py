@@ -7,8 +7,8 @@ from app import models, schemas
 router = APIRouter()
 
 @router.get("/players", response_model=list[schemas.PlayerResponse])
-def get_players(db: Session = Depends(get_db)):
-    return db.query(models.Player).all()
+def get_players(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    return db.query(models.Player).offset(offset).limit(limit).all()
 
 @router.get("/players/{player_id}/stats", response_model=schemas.PlayerStatResponse)
 def get_player_stat(player_id: int, db: Session = Depends(get_db), season: str = Query("2026")):
