@@ -141,6 +141,11 @@ alembic revision --autogenerate -m "describe el cambio"
 ### Búsqueda global
 - `GET /search?q=&limit=` — **busca equipos, jugadores y estadios** a la vez por nombre (ignora acentos; los que empiezan por la consulta aparecen primero) 🆕
 
+### Analítica 🆕
+- `GET /compare/players?a=&b=&season=` — **compara dos jugadores** lado a lado (goles, asistencias, xG, xA, rating...)
+- `GET /compare/teams?a=&b=&season=` — **compara dos equipos** (posición, puntos, registro, goles, xG)
+- `GET /predict?home=&away=&season=` — **predice un partido** (modelo Poisson): goles esperados, probabilidades 1/X/2 y marcador más probable
+
 ### Tiempo real (SSE)
 - `GET /live/stream?interval=&max_seconds=` — **marcadores en vivo por streaming** (Server-Sent Events). El servidor empuja un evento `live` con los partidos en curso cuando cambian. Ej: `new EventSource("/live/stream")` 🆕
 

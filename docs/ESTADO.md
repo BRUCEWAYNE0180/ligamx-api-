@@ -88,6 +88,9 @@ detectado en los datos no coincide con el esperado.
       bajo `/v1/...` (recomendado). `GET /version` lista las versiones.
 
 ## Hecho recientemente
+- **Analítica**: comparador de jugadores (`/compare/players`) y equipos
+  (`/compare/teams`), y predictor de partidos (`/predict`, modelo Poisson con
+  fuerzas de ataque/defensa + ventaja de local).
 - xG por **equipo** (`/teams/xg-performance`), **tabla de porteros**
   (`/365scores/goalkeepers`) y **heatmaps por jugador**
   (`/365scores/matches/{id}/heatmaps`).
