@@ -80,6 +80,7 @@ alembic revision --autogenerate -m "describe el cambio"
 ### General
 - `GET /` — info de la API
 - `GET /health` — health check
+- `GET /season` — **torneo vigente y datos cargados** (Apertura/Clausura, si ya inició, total de partidos) 🆕
 
 ### Equipos
 - `GET /teams` — lista (paginada) con escudo, fundación y estadio

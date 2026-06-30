@@ -124,7 +124,9 @@ class ESPNRequestsScraper(BaseScraper):
             time.sleep(0.15)
         return list(matches.values())
 
-    def get_top_scorers(self, season_name="2025") -> List[Dict]:
+    def get_top_scorers(self, season_name=None) -> List[Dict]:
+        from app.season import current_season_year
+        season_name = season_name or current_season_year()
         matches = self.get_matches()
         scorers = {}
         for match in matches:

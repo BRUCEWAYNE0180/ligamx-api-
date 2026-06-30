@@ -6,6 +6,7 @@ from app.scrapers.news_scraper import fetch_news
 from app.scrapers.sync_all_stats import sync_all_stats
 from app.scrapers.sofascore_scraper import get_events as get_sofascore_events
 from app.scrapers import extras_scraper
+from app.season import current_tournament, tournament_from_matches
 from app import models
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,10 @@ def run_sync(db, source: str = "espn"):
         raise ValueError("Datos insuficientes del scraper; se aborta para no vaciar la BD")
 
     calculate_week_numbers(raw_matches)
-    current_year = datetime.now().year
+    # El torneo/ano se deduce de las fechas REALES de los partidos cargados
+    # (p. ej. partidos jul-dic 2026 => "Apertura 2026"), no del mes actual.
+    tournament, current_year = tournament_from_matches(raw_matches)
+    logger.info(f"Temporada detectada de los datos: {tournament} {current_year}")
 
     # -------- FASE 2: WRITE (una sola transaccion) --------
     try:
@@ -206,8 +210,8 @@ def run_sync(db, source: str = "espn"):
                 )
             )
 
-        # Temporada
-        sn = models.Season(name=str(current_year), year=current_year, tournament_type="Liga MX")
+        # Temporada (etiquetada por torneo: p. ej. "Apertura 2026")
+        sn = models.Season(name=f"{tournament} {current_year}", year=current_year, tournament_type=tournament)
         db.add(sn)
         db.flush()
 
