@@ -57,6 +57,7 @@ class Match(Base):
     status = Column(String, default="scheduled")
     sofascore_event_id = Column(Integer, nullable=True, index=True)
     external_event_id = Column(String, nullable=True, index=True)  # id del partido en la fuente (ESPN/365)
+    referee = Column(String, nullable=True)  # arbitro principal (via 365Scores; ESPN no lo expone)
     
     season = relationship("Season", back_populates="matches")
     stadium = relationship("Stadium")

@@ -111,3 +111,47 @@ def test_match_full(client, seeded):
 
 def test_match_full_404(client, seeded):
     assert client.get("/matches/999/full").status_code == 404
+
+
+
+# ---------- Fase C: stats por jugador (365Scores) y arbitros ----------
+
+def test_match_full_incluye_referee_y_venue(client, seeded, db):
+    from app import models
+    m = db.get(models.Match, 1)
+    m.referee = "César Ramos"
+    db.commit()
+    r = client.get("/matches/1/full").json()
+    assert r["referee"] == "César Ramos"
+    assert "venue" in r  # presente aunque sea None
+
+
+def test_365_player_leaders(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = [{"category_id": 1, "category": "Goles",
+             "leaders": [{"rank": 1, "name": "Paulinho", "value": "14", "team_id": 2078}]}]
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper,
+                        "get_player_season_leaders",
+                        lambda self, category_id=None: fake)
+    r = client.get("/365scores/leaders")
+    assert r.status_code == 200
+    body = r.json()
+    assert body[0]["category"] == "Goles"
+    assert body[0]["leaders"][0]["name"] == "Paulinho"
+
+
+def test_365_match_player_stats(client, monkeypatch):
+    from app.scrapers import scores365_scraper
+    fake = {"game_id": 123, "teams": [{
+        "team_name": "Pumas", "formation": "4-3-3",
+        "players": [{"name": "Carrasquilla", "rating": 6.8,
+                     "stats": {"Minutes": "90'", "Total Remates": "3"}}],
+    }]}
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper,
+                        "get_match_player_stats",
+                        lambda self, game_id: fake)
+    r = client.get("/365scores/matches/123/player-stats")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["teams"][0]["players"][0]["rating"] == 6.8
+    assert body["teams"][0]["players"][0]["stats"]["Minutes"] == "90'"

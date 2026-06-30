@@ -47,6 +47,7 @@ class MatchBase(BaseModel):
     away_score: Optional[int] = None
     status: str = "scheduled"
     week_number: Optional[int] = None
+    referee: Optional[str] = None
     sofascore_event_id: Optional[int] = None
 
 class MatchResponse(MatchBase):

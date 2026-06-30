@@ -45,13 +45,13 @@ detectado en los datos no coincide con el esperado.
 - [ ] Validar que el sync de GitHub Actions apunte al `DATABASE_URL` correcto.
 
 ### Datos completos (el objetivo "todo por jugador")
-- [ ] **Estadísticas por jugador completas** (minutos, tiros, pases, rating…)
-      desde 365Scores/SofaScore. Hoy `PlayerStat` solo cubre a quien marca gol o
-      recibe tarjeta vía `keyEvents` de ESPN.
-- [ ] Persistir **árbitros** (365Scores ya los expone en `/matches/{id}/info`).
+- [x] **Estadísticas por jugador completas** vía 365Scores (líderes de temporada
+      en 16 categorías + stats completas por jugador en cada partido).
+- [x] Persistir **árbitros** (`Match.referee`, cruce con 365Scores).
 - [ ] Lesionados/suspendidos y disponibilidad por jornada.
 - [ ] Liguilla/Play-In real (bracket ida/vuelta), no solo la foto de la tabla.
 - [ ] Histórico multi-temporada consultable por endpoint.
+- [ ] Persistir las stats por jugador del partido en BD (hoy son live/cacheadas).
 
 ### Plataforma
 - [ ] Redis para caché compartido entre workers + rate limiting.
@@ -59,6 +59,12 @@ detectado en los datos no coincide con el esperado.
 - [ ] Versionado de API (`/v1/...`) y búsqueda global (`/search?q=`).
 
 ## Hecho recientemente
+- Estadísticas por jugador completas vía 365Scores: líderes de temporada en 16
+  categorías (`/365scores/leaders`), líderes por equipo (`/365scores/team-leaders`)
+  y stats completas por jugador del partido (`/365scores/matches/{id}/player-stats`:
+  minutos, xG, xA, pases, regates, duelos, intercepciones, rating...).
+- Árbitros: `Match.referee` se puebla en el sync (cruce con 365Scores) y se expone
+  en `/matches/{id}/full`.
 - Migración a Pydantic v2 (`ConfigDict`).
 - Limpieza de scrapers muertos (`top_scorers_scraper`, `player_stats_scraper`,
   `sync_player_stats`) y del shim `fetch_flashscore_news`.
