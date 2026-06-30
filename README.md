@@ -80,6 +80,10 @@ alembic revision --autogenerate -m "describe el cambio"
 
 ## 📚 Catálogo de endpoints
 
+> **Versionado:** todas las rutas están disponibles en la raíz (`/...`, por
+> compatibilidad) y bajo **`/v1/...`** (recomendado para nuevos clientes).
+> `GET /version` devuelve las versiones disponibles. Ejemplos abajo en la raíz.
+
 ### General
 - `GET /` — info de la API
 - `GET /health` — health check

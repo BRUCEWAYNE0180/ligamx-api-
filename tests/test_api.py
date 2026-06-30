@@ -448,3 +448,23 @@ def test_live_stream_sse(client, monkeypatch):
     blob = "\n".join(lines)
     assert got_data
     assert "event: live" in blob
+
+
+
+# ---------- Versionado /v1 ----------
+
+def test_version_endpoint(client):
+    r = client.get("/version").json()
+    assert r["current"] == "v1"
+    assert "v1" in r["available_versions"]
+
+
+def test_v1_mirrors_root(client, seeded):
+    # health y standings disponibles bajo /v1 igual que en la raiz
+    assert client.get("/v1/health").status_code == 200
+    root = client.get("/standings").json()
+    v1 = client.get("/v1/standings").json()
+    assert v1 == root
+    assert len(v1) == 2
+    # un endpoint mas para asegurar el espejo
+    assert client.get("/v1/seasons").status_code == 200

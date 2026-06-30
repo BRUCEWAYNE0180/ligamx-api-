@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import re
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +34,13 @@ if os.getenv("RUN_SCHEDULER", "false").lower() == "true":
     scheduler.add_job(auto_sync, "interval", hours=6)
     scheduler.start()
 
-app = FastAPI(title="Liga MX API", version="1.0")
+def _unique_route_id(route) -> str:
+    """operationId unico por ruta (necesario porque cada router se monta dos
+    veces: en la raiz y bajo /v1, lo que produciria ids duplicados)."""
+    return re.sub(r"[^0-9a-zA-Z_]", "_", f"{route.name}_{route.path}").strip("_")
+
+
+app = FastAPI(title="Liga MX API", version="1.0", generate_unique_id_function=_unique_route_id)
 
 # Rate limiting por IP (slowapi). El limite por defecto aplica a todas las rutas;
 # los endpoints sensibles (sync) anaden un limite mas estricto.
@@ -60,17 +67,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(health.router)
-app.include_router(teams.router)
-app.include_router(matches.router)
-app.include_router(standings.router)
-app.include_router(stadiums.router)
-app.include_router(players.router)
-app.include_router(stats.router)
-app.include_router(news.router)
-app.include_router(sync.router)
-app.include_router(sofascore.router)
-app.include_router(scores365.router)
-app.include_router(extras.router)
-app.include_router(search.router)
-app.include_router(live.router)
+# Todos los routers se montan DOS veces: en la raiz (retrocompatibilidad con los
+# clientes actuales) y bajo el prefijo /v1 (version estable para evolucionar sin
+# romper a nadie). Asi, p. ej., /standings y /v1/standings devuelven lo mismo.
+ROUTERS = [
+    health.router, teams.router, matches.router, standings.router, stadiums.router,
+    players.router, stats.router, news.router, sync.router, sofascore.router,
+    scores365.router, extras.router, search.router, live.router,
+]
+
+for _r in ROUTERS:
+    app.include_router(_r)
+for _r in ROUTERS:
+    app.include_router(_r, prefix="/v1")
+
+
+@app.get("/version", tags=["meta"])
+def api_version():
+    """Versiones de la API disponibles. Las rutas existen en la raiz (legado) y
+    bajo /v1 (recomendado para nuevos clientes)."""
+    return {
+        "api": "Liga MX API",
+        "version": "1.0",
+        "available_versions": ["v1"],
+        "current": "v1",
+        "note": "Las rutas estan disponibles en la raiz (/...) y bajo /v1 (/v1/...).",
+    }
