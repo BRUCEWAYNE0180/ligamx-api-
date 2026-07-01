@@ -26,7 +26,7 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: alembic upgrade head
+        run: python scripts/migrate.py
 
       - name: Run sync
         env:

@@ -75,9 +75,14 @@ alembic revision --autogenerate -m "describe el cambio"
 - En **desarrollo con SQLite**, la app crea las tablas automáticamente al
   arrancar (no necesitas correr Alembic).
 - En **producción con PostgreSQL**, el esquema lo maneja Alembic. El despliegue
-  en Render ejecuta `alembic upgrade head` antes de iniciar, y el workflow de
-  sincronización también lo corre antes de cargar datos. Esto resuelve el
-  *drift* de esquema: las columnas/tablas nuevas se aplican a bases existentes.
+  en Render y el workflow de sincronización ejecutan **`python scripts/migrate.py`**
+  (migración *self-healing*) antes de arrancar/sincronizar. Esto resuelve el
+  *drift* de esquema y, sobre todo, el caso en que la base free queda con las
+  tablas creadas pero **sin el sello de versión de Alembic** (que hacía fallar a
+  `alembic upgrade head` con *"relation already exists"* y rompía el auto-sync).
+
+  > 🔧 En Render, deja el **Start Command** como:
+  > `python scripts/migrate.py && uvicorn app.main:app --host 0.0.0.0 --port 10000`
 
 ---
 
