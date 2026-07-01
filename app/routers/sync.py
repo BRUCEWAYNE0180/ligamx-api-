@@ -43,14 +43,42 @@ def backfill_season(
 def sync_player_identity(
     request: Request,
     season: str = Query(None, description="Etiqueta de temporada; por defecto todas"),
+    force: bool = Query(False, description="Si True, re-mapea incluso enlaces existentes"),
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """Reconstruye el mapa de identidad ESPN<->365Scores (rellena
-    players.external_365_id) emparejando por nombre+equipo. Idempotente."""
+    players.external_365_id) emparejando por nombre+equipo. Respeta los enlaces
+    manuales existentes salvo que force=True. Idempotente."""
     from app.services.player_identity import build_player_identity_map
-    result = build_player_identity_map(db, season)
+    result = build_player_identity_map(db, season, force=force)
     return {"message": "Mapa de identidad reconstruido", "result": result}
+
+
+@router.post("/players/{player_id}/link-365")
+@limiter.limit(SYNC_LIMIT)
+def link_player_365(
+    request: Request,
+    player_id: int,
+    external_365_id: int = Query(..., description="id del jugador en 365Scores"),
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """Enlaza MANUALMENTE un jugador (ESPN) con su id de 365Scores. Util para los
+    pocos casos que el cruce automatico no resuelve (apodos sin tokens en comun).
+    El enlace manual se respeta en futuras reconstrucciones del mapa."""
+    player = db.query(models.Player).filter(models.Player.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+    player.external_365_id = external_365_id
+    db.add(player)
+    db.commit()
+    return {
+        "message": "Jugador enlazado con 365Scores",
+        "player_id": player.id,
+        "player": player.name,
+        "external_365_id": external_365_id,
+    }
 
 
 @router.get("/sync/status")
