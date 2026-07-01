@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 from typing import Optional
 from datetime import datetime
+from urllib.parse import quote_plus
 
 class StadiumBase(BaseModel):
     name: str
@@ -12,6 +13,18 @@ class StadiumBase(BaseModel):
 class StadiumResponse(StadiumBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    @property
+    def maps_url(self) -> Optional[str]:
+        """Link a Google Maps del estadio (por coordenadas si las hay, o por
+        nombre+ciudad). Comodo para apps que muestren la sede."""
+        if self.latitude is not None and self.longitude is not None:
+            return f"https://www.google.com/maps/search/?api=1&query={self.latitude},{self.longitude}"
+        if not self.name:
+            return None
+        query = self.name + (f" {self.city}" if self.city else "")
+        return "https://www.google.com/maps/search/?api=1&query=" + quote_plus(query)
 
 class TeamBase(BaseModel):
     name: str

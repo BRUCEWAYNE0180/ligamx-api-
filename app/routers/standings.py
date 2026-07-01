@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 import math
 from app.database import get_db
-from app.dependencies import resolve_season_id, resolve_season_label, latest_season, _apertura_first
+from app.dependencies import resolve_season_id, resolve_season_label, latest_season, _apertura_first, find_season
 from app import models, schemas
 
 router = APIRouter()
@@ -33,6 +33,53 @@ def list_seasons(db: Session = Depends(get_db)):
             "is_current": bool(current and current.id == s.id),
         })
     return out
+
+
+def _season_summary(db, s):
+    """Resumen agregado de una temporada para comparar."""
+    standings = (db.query(models.Standing).options(joinedload(models.Standing.team))
+                 .filter(models.Standing.season_id == s.id)
+                 .order_by(models.Standing.position).all())
+    leader = standings[0] if standings else None
+    matches = db.query(models.Match).filter(models.Match.season_id == s.id).all()
+    finished = [m for m in matches if m.status == "finished" and m.home_score is not None]
+    total_goals = sum((m.home_score or 0) + (m.away_score or 0) for m in finished)
+    played = len(finished)
+    top = (db.query(models.TopScorer).filter(models.TopScorer.season == s.name)
+           .order_by(models.TopScorer.goals.desc()).first())
+    return {
+        "season": s.name,
+        "year": s.year,
+        "tournament": s.tournament_type,
+        "teams": len(standings),
+        "matches_total": len(matches),
+        "matches_played": played,
+        "goals_total": total_goals,
+        "goals_per_match": round(total_goals / played, 2) if played else 0.0,
+        "standings_leader": ({
+            "team": leader.team.name if leader.team else None,
+            "points": leader.points, "played": leader.played,
+        } if leader else None),
+        "top_scorer": ({
+            "player": top.player, "team": top.team, "goals": top.goals,
+        } if top else None),
+    }
+
+
+@router.get("/seasons/compare")
+def compare_seasons(
+    a: str = Query(..., description="Temporada A ('Apertura 2025' o ano)"),
+    b: str = Query(..., description="Temporada B ('Clausura 2026' o ano)"),
+    db: Session = Depends(get_db),
+):
+    """Compara dos temporadas lado a lado: líder de la fase regular, goleador,
+    goles totales y promedio por partido, equipos y partidos. Útil para el
+    histórico multi-temporada."""
+    sa, sb = find_season(db, a), find_season(db, b)
+    if sa is None or sb is None:
+        missing = a if sa is None else b
+        raise HTTPException(status_code=404, detail=f"Temporada no encontrada: {missing}")
+    return {"a": _season_summary(db, sa), "b": _season_summary(db, sb)}
 
 
 @router.get("/standings", response_model=list[schemas.StandingResponse])
