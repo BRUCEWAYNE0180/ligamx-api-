@@ -277,7 +277,8 @@ Comando rápido para confirmar frescura y que todo responde:
 ### Sincronización
 - `POST /sync?source=espn` — recarga los datos (requiere header `X-API-Key`)
 - `POST /sync/backfill?year=2025&tournament=Apertura` — **carga una temporada pasada al histórico** sin borrar las demás; la tabla se reconstruye desde los resultados (requiere `X-API-Key`) 🆕
-- `POST /sync/player-identity?season=` — **reconstruye el mapa de identidad** ESPN↔365Scores (rellena `external_365_id` para emparejar stats por id exacto en vez de por nombre); se ejecuta solo en cada `POST /sync` (requiere `X-API-Key`) 🆕
+- `POST /sync/player-identity?season=&force=` — **reconstruye el mapa de identidad** ESPN↔365Scores (rellena `external_365_id` para emparejar stats por id exacto en vez de por nombre); respeta enlaces manuales salvo `force=true`; se ejecuta solo en cada `POST /sync` (requiere `X-API-Key`) 🆕
+- `POST /players/{id}/link-365?external_365_id=` — **enlaza a mano** un jugador con su id de 365Scores (para apodos que el cruce automático no resuelve); el enlace se conserva en futuras reconstrucciones (requiere `X-API-Key`) 🆕
 - `GET /sync/status` — **estado y frescura de los datos** (último sync, si fue exitoso, antigüedad) 🆕
 
 ---

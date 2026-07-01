@@ -99,13 +99,15 @@ def _best_match(src_name: str, candidates: list[models.Player]):
     return best_player, best_score, unambiguous
 
 
-def build_player_identity_map(db, season: str = None) -> dict:
+def build_player_identity_map(db, season: str = None, force: bool = False) -> dict:
     """Rellena `players.external_365_id` cruzando por nombre+equipo contra
     `player_match_stats`. Idempotente. Devuelve un resumen del resultado.
 
     - Solo considera filas con player_id (id de 365Scores) y team_id.
     - Empareja dentro del mismo equipo; acepta el match si supera el umbral y es
       inequivoco (margen sobre el segundo candidato).
+    - RESPETA los enlaces ya existentes (p. ej. puestos a mano); no los sobrescribe
+      salvo que `force=True`.
     """
     M = models.PlayerMatchStat
     q = db.query(M.player_id, M.player_name, M.team_id).distinct()
@@ -118,9 +120,20 @@ def build_player_identity_map(db, season: str = None) -> dict:
     for p in db.query(models.Player).all():
         players_by_team.setdefault(p.team_id, []).append(p)
 
+    # Enlaces ya existentes: se preservan (a menos que force). Sus jugadores e ids
+    # de 365 quedan "reservados" para no pisarlos.
+    preserved = 0
+    taken: dict[int, set] = {}    # team_id -> set de player.id ya asignados
+    used_pids: set = set()        # ids de 365 ya enlazados
+    for p_list in players_by_team.values():
+        for p in p_list:
+            if p.external_365_id is not None and not force:
+                taken.setdefault(p.team_id, set()).add(p.id)
+                used_pids.add(p.external_365_id)
+                preserved += 1
+
     mapped = 0
     unmatched: list[str] = []
-    taken: dict[int, set] = {}   # team_id -> set de player.id ya asignados
 
     # Procesamos primero los matches mas seguros (orden por mejor score) para que
     # los emparejamientos exactos "reserven" su jugador antes que los dudosos.
@@ -132,17 +145,20 @@ def build_player_identity_map(db, season: str = None) -> dict:
     scored_sources.sort(key=lambda t: t[0], reverse=True)
 
     for score, ok, pid, name, tid, player in scored_sources:
+        if pid in used_pids:
+            continue  # ese id de 365 ya esta enlazado (manual o previo)
         if not player or score < _MATCH_THRESHOLD or not ok:
             unmatched.append(name)
             continue
         used = taken.setdefault(tid, set())
         if player.id in used:
-            # otro jugador 365 ya tomo este ESPN player (homonimo) -> sin asignar
+            # jugador ya asignado (enlace manual/previo u homonimo) -> sin asignar
             unmatched.append(name)
             continue
         player.external_365_id = pid
         db.add(player)
         used.add(player.id)
+        used_pids.add(pid)
         mapped += 1
 
     db.commit()
@@ -151,6 +167,7 @@ def build_player_identity_map(db, season: str = None) -> dict:
         "season": season,
         "sources_365": total_sources,
         "mapped": mapped,
+        "preserved": preserved,
         "unmatched": len(unmatched),
         "unmatched_names": sorted(set(unmatched))[:50],
     }

@@ -1100,6 +1100,38 @@ def test_liguilla_results_serie_real(client, seeded, db):
 
 
 
+# ---------- Enlace manual del cruce de identidad ----------
+
+def test_build_identity_respeta_enlace_manual(db):
+    from app import models
+    from app.services.player_identity import build_player_identity_map
+    db.add(models.Team(id=1, name="América"))
+    # 'Chaco' es un apodo que NO casa por nombre con "Diego Valdés"
+    db.add(models.Player(id=10, team_id=1, name="Diego Valdés", external_365_id=8001))
+    db.flush()
+    db.add(models.PlayerMatchStat(match_id=1, player_id=8001, player_name="Chaco",
+                                  team_id=1, season="Apertura 2026", goals=1))
+    db.commit()
+    res = build_player_identity_map(db, "Apertura 2026")
+    # el enlace manual se conserva (no lo pisa ni lo cuenta como nuevo)
+    assert res["preserved"] == 1
+    assert db.get(models.Player, 10).external_365_id == 8001
+
+
+def test_link_365_endpoint(client, seeded, db):
+    from app import models
+    # sin API key -> 422; con key -> enlaza
+    assert client.post("/players/10/link-365", params={"external_365_id": 777}).status_code == 422
+    r = client.post("/players/10/link-365", params={"external_365_id": 777},
+                    headers={"X-API-Key": "test-key"})
+    assert r.status_code == 200
+    assert r.json()["external_365_id"] == 777
+    assert db.get(models.Player, 10).external_365_id == 777
+    # jugador inexistente -> 404
+    assert client.post("/players/99999/link-365", params={"external_365_id": 1},
+                       headers={"X-API-Key": "test-key"}).status_code == 404
+
+
 # ---------- Joyita: link a Google Maps de estadios ----------
 
 def test_stadium_maps_url_por_coordenadas(client, db):
