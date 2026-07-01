@@ -111,6 +111,44 @@ imprime temporada, equipos, jugadores y partidos cargados. Verifica con
 
 ---
 
+## 🩺 Chequeo rápido (post-deploy / post-jornada)
+
+Un comando le pega a los endpoints clave de la API en producción y reporta
+OK/FALLO en segundos, incluyendo la frescura de los datos:
+
+```bash
+python scripts/healthcheck.py                       # URL por defecto (producción)
+python scripts/healthcheck.py https://mi-api.com    # otra URL
+python scripts/healthcheck.py --max-age-hours 12    # umbral de frescura
+```
+
+Sale con código `!= 0` si algún chequeo **crítico** falla (útil para automatizar
+o correrlo después de cada jornada para confirmar que el sync actualizó bien).
+
+---
+
+## 📋 Qué revisar en la Jornada 1 (arranque de temporada)
+
+Varios endpoints dependen de **partidos ya jugados**, así que en pretemporada
+salen vacíos/en cero y **se llenan solos** conforme se disputan partidos y el
+sync captura las estadísticas de 365Scores. Tras la Jornada 1, verifica que se
+poblaron:
+
+| Endpoint | Qué debería aparecer tras la J1 |
+|---|---|
+| `GET /players/leaderboard?metric=goals` | Goleadores, asistencias, rating, xG… |
+| `GET /players/discipline` | Tarjetas acumuladas + riesgo de suspensión |
+| `GET /players/identity-map` | `coverage_pct` > 0 (cruce ESPN↔365 poblado) |
+| `GET /matches/{id}/players-to-watch` | Jugadores destacados por partido |
+| `GET /matches/{id}/player-stats` | Stats por jugador del partido (xG, rating…) |
+| `GET /standings` · `/power-ranking` | Puntos y posiciones reales (ya no en cero) |
+| `GET /liguilla/results` | Se llena al llegar la fase final (fin del torneo) |
+
+Comando rápido para confirmar frescura y que todo responde:
+`python scripts/healthcheck.py`
+
+---
+
 ## 📚 Catálogo de endpoints
 
 > **Versionado:** todas las rutas están disponibles en la raíz (`/...`, por
@@ -165,6 +203,7 @@ imprime temporada, equipos, jugadores y partidos cargados. Verifica con
 
 ### Tabla y goleadores
 - `GET /seasons` — **temporadas/torneos disponibles** (histórico multi-temporada) 🆕
+- `GET /seasons/compare?a=&b=` — **compara dos temporadas lado a lado** (líder de la fase regular, goleador, goles totales y promedio, equipos y partidos) 🆕
 - `GET /standings?season=` — tabla de posiciones (por defecto la temporada vigente) 🆕
 - `GET /standings/projection?season=` — **proyección de la tabla final** (puntos esperados de los partidos restantes vía Poisson) 🆕
 - `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)

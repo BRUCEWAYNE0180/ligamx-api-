@@ -1124,3 +1124,35 @@ def test_stadium_maps_url_en_teams(client, seeded):
     # el fixture liga el equipo 1 al estadio 1 -> el maps_url aparece en /teams
     ame = [t for t in client.get("/teams").json() if t["id"] == 1][0]
     assert ame["stadium"]["maps_url"].startswith("https://www.google.com/maps/search/")
+
+
+# ---------- Comparar temporadas ----------
+
+def test_seasons_compare(client, seeded, db):
+    from datetime import datetime
+    from app import models
+    # segunda temporada con datos propios
+    db.add(models.Season(id=2, name="Clausura 2026", year=2026, tournament_type="Clausura"))
+    db.flush()
+    db.add(models.Team(id=99, name="Equipo Z"))
+    db.add(models.Standing(season_id=2, team_id=99, position=1, played=2, won=2, drawn=0,
+                           lost=0, goals_for=5, goals_against=1, goal_difference=4, points=6))
+    db.add(models.Match(id=70, season_id=2, home_team_id=99, away_team_id=1,
+                        home_score=3, away_score=1, status="finished", match_date=datetime(2026, 1, 15)))
+    db.add(models.TopScorer(player="Goleador Z", team="Equipo Z", goals=7, season="Clausura 2026"))
+    db.commit()
+
+    r = client.get("/seasons/compare", params={"a": "Apertura 2026", "b": "Clausura 2026"}).json()
+    assert r["a"]["season"] == "Apertura 2026"
+    assert r["b"]["season"] == "Clausura 2026"
+    # B: líder Equipo Z, goleador y goles del partido sembrado (3+1=4)
+    assert r["b"]["standings_leader"]["team"] == "Equipo Z"
+    assert r["b"]["top_scorer"]["player"] == "Goleador Z" and r["b"]["top_scorer"]["goals"] == 7
+    assert r["b"]["goals_total"] == 4 and r["b"]["matches_played"] == 1
+    # A: el fixture tiene 1 partido finalizado (2+1=3 goles) y líder América
+    assert r["a"]["goals_total"] == 3
+    assert r["a"]["standings_leader"]["team"] == "América"
+
+
+def test_seasons_compare_404(client, seeded):
+    assert client.get("/seasons/compare", params={"a": "Apertura 2026", "b": "Clausura 2099"}).status_code == 404
