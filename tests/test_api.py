@@ -1100,6 +1100,32 @@ def test_liguilla_results_serie_real(client, seeded, db):
 
 
 
+# ---------- Joyita: link a Google Maps de estadios ----------
+
+def test_stadium_maps_url_por_coordenadas(client, db):
+    from app import models
+    db.add(models.Stadium(id=5, name="Estadio Banorte", city="CDMX",
+                          capacity=87000, latitude=19.3029, longitude=-99.1505))
+    db.commit()
+    r = client.get("/stadiums/5").json()
+    assert r["maps_url"] == "https://www.google.com/maps/search/?api=1&query=19.3029,-99.1505"
+
+
+def test_stadium_maps_url_por_nombre(client, db):
+    from app import models
+    db.add(models.Stadium(id=6, name="Estadio Akron", city="Zapopan"))
+    db.commit()
+    r = client.get("/stadiums/6").json()
+    assert r["maps_url"].startswith("https://www.google.com/maps/search/?api=1&query=")
+    assert "Estadio+Akron" in r["maps_url"] and "Zapopan" in r["maps_url"]
+
+
+def test_stadium_maps_url_en_teams(client, seeded):
+    # el fixture liga el equipo 1 al estadio 1 -> el maps_url aparece en /teams
+    ame = [t for t in client.get("/teams").json() if t["id"] == 1][0]
+    assert ame["stadium"]["maps_url"].startswith("https://www.google.com/maps/search/")
+
+
 # ---------- Comparar temporadas ----------
 
 def test_seasons_compare(client, seeded, db):
