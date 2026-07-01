@@ -203,6 +203,7 @@ Comando rápido para confirmar frescura y que todo responde:
 
 ### Tabla y goleadores
 - `GET /seasons` — **temporadas/torneos disponibles** (histórico multi-temporada) 🆕
+- `GET /seasons/compare?a=&b=` — **compara dos temporadas lado a lado** (líder de la fase regular, goleador, goles totales y promedio, equipos y partidos) 🆕
 - `GET /standings?season=` — tabla de posiciones (por defecto la temporada vigente) 🆕
 - `GET /standings/projection?season=` — **proyección de la tabla final** (puntos esperados de los partidos restantes vía Poisson) 🆕
 - `GET /liguilla?season=` — **clasificación a Liguilla / Play-In** (formato Liga MX)
