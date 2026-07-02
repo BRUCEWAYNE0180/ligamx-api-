@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import unicodedata
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -9,6 +10,23 @@ from app.scrapers.sofascore_scraper import get_match_details
 from app.cache import cached
 
 router = APIRouter()
+
+
+def _norm(s: str) -> str:
+    """Nombre canonico: sin acentos, minusculas, sin espacios extra."""
+    return "".join(c for c in unicodedata.normalize("NFD", s or "")
+                   if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def _canonical_team_ids(db: Session, team: "models.Team") -> set:
+    """Todos los team_id que comparten el nombre canonico del equipo. Agrega
+    posibles filas duplicadas del mismo club a lo largo de las temporadas o
+    fuentes (p. ej. si un sync viejo lo cargo con otro id). Incluye siempre el
+    id propio, asi el H2H nunca devuelve menos de lo que ya devolvia."""
+    nq = _norm(team.name)
+    ids = {t.id for t in db.query(models.Team.id, models.Team.name).all() if _norm(t.name) == nq}
+    ids.add(team.id)
+    return ids
 
 @router.get("/matches", response_model=list[schemas.MatchResponse])
 def get_matches(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), team_id: int = Query(None), week: int = Query(None), status: str = Query(None), season: str = Query(None, description="Etiqueta o ano; por defecto todas las temporadas"), db: Session = Depends(get_db)):
@@ -75,29 +93,39 @@ def get_matches_by_week(week_number: int, limit: int = Query(20, ge=1, le=100), 
 
 @router.get("/h2h/{team1_id}/{team2_id}", response_model=list[schemas.MatchResponse])
 def get_h2h(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
-    get_or_404(db, models.Team, team1_id)
-    get_or_404(db, models.Team, team2_id)
+    """Historial completo de enfrentamientos directos entre dos equipos, a lo
+    largo de TODAS las temporadas cargadas (no solo la vigente). Agrega por
+    equipo canonico (nombre normalizado), por si un club tuviera filas con ids
+    distintos entre temporadas."""
+    t1 = get_or_404(db, models.Team, team1_id)
+    t2 = get_or_404(db, models.Team, team2_id)
+    ids1 = _canonical_team_ids(db, t1)
+    ids2 = _canonical_team_ids(db, t2)
     return db.query(models.Match).filter(
-        ((models.Match.home_team_id == team1_id) & (models.Match.away_team_id == team2_id)) |
-        ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))
+        (models.Match.home_team_id.in_(ids1) & models.Match.away_team_id.in_(ids2)) |
+        (models.Match.home_team_id.in_(ids2) & models.Match.away_team_id.in_(ids1))
     ).order_by(models.Match.match_date).all()
 
 @router.get("/h2h/{team1_id}/{team2_id}/summary")
 def get_h2h_summary(team1_id: int, team2_id: int, db: Session = Depends(get_db)):
-    """Resumen del historial entre dos equipos: partidos jugados, victorias de
-    cada uno, empates y goles totales."""
+    """Resumen del historial entre dos equipos a lo largo de TODAS las temporadas
+    cargadas: partidos jugados, victorias de cada uno, empates y goles totales.
+    Agrega por equipo canonico (nombre normalizado) para no perder partidos si un
+    club aparece con ids distintos en distintas temporadas."""
     t1 = get_or_404(db, models.Team, team1_id)
     t2 = get_or_404(db, models.Team, team2_id)
+    ids1 = _canonical_team_ids(db, t1)
+    ids2 = _canonical_team_ids(db, t2)
     matches = db.query(models.Match).filter(
-        (((models.Match.home_team_id == team1_id) & (models.Match.away_team_id == team2_id)) |
-         ((models.Match.home_team_id == team2_id) & (models.Match.away_team_id == team1_id))),
+        ((models.Match.home_team_id.in_(ids1) & models.Match.away_team_id.in_(ids2)) |
+         (models.Match.home_team_id.in_(ids2) & models.Match.away_team_id.in_(ids1))),
         models.Match.status == "finished",
         models.Match.home_score.isnot(None), models.Match.away_score.isnot(None),
     ).all()
 
     t1_wins = t2_wins = draws = t1_goals = t2_goals = 0
     for m in matches:
-        if m.home_team_id == team1_id:
+        if m.home_team_id in ids1:
             g1, g2 = m.home_score, m.away_score
         else:
             g1, g2 = m.away_score, m.home_score
@@ -115,6 +143,7 @@ def get_h2h_summary(team1_id: int, team2_id: int, db: Session = Depends(get_db))
         "team2": {"id": team2_id, "name": t2.name, "wins": t2_wins, "goals": t2_goals},
         "played": len(matches),
         "draws": draws,
+        "seasons_covered": db.query(models.Season).count(),
     }
 
 @router.get("/matches/live")

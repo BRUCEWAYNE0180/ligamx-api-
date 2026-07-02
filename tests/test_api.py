@@ -1413,3 +1413,84 @@ def test_bot_endpoints_pretemporada_sin_datos(client, monkeypatch):
         assert r.status_code < 500, f"{path} devolvio {r.status_code}"
     # lineup-impact sin XI -> disponible false, no inventa
     assert client.get("/365scores/matches/123/lineup-impact").json()["disponible"] is False
+
+
+# ---------- H2H agregado en TODAS las temporadas ----------
+
+def _seed_two_seasons_h2h(db):
+    """2 temporadas con enfrentamientos América(227)–Pachuca(234) en cada una."""
+    from datetime import datetime
+    from app import models
+    db.add(models.Season(id=1, name="Apertura 2024", year=2024, tournament_type="Apertura"))
+    db.add(models.Season(id=2, name="Clausura 2025", year=2025, tournament_type="Clausura"))
+    db.add(models.Team(id=227, name="América"))
+    db.add(models.Team(id=234, name="Pachuca"))
+    db.flush()
+
+    def mk(sid, h, a, hs, as_, d):
+        db.add(models.Match(season_id=sid, home_team_id=h, away_team_id=a,
+                            home_score=hs, away_score=as_, status="finished", match_date=d))
+
+    mk(1, 227, 234, 2, 1, datetime(2024, 8, 1))   # América gana
+    mk(1, 234, 227, 0, 0, datetime(2024, 11, 1))  # empate
+    mk(2, 227, 234, 3, 0, datetime(2025, 2, 1))   # América gana
+    mk(2, 234, 227, 1, 2, datetime(2025, 4, 1))   # América gana de visita
+    db.commit()
+
+
+def test_h2h_summary_agrega_todas_las_temporadas(client, db):
+    _seed_two_seasons_h2h(db)
+    r = client.get("/h2h/227/234/summary").json()
+    assert r["played"] == 4                 # antes solo contaba la temporada vigente
+    assert r["team1"]["wins"] == 3          # 3 victorias de América en 2 temporadas
+    assert r["team2"]["wins"] == 0
+    assert r["draws"] == 1
+    assert r["team1"]["goals"] == 7 and r["team2"]["goals"] == 2
+    assert r["seasons_covered"] == 2
+    # el listado tambien trae los 4
+    assert len(client.get("/h2h/227/234").json()) == 4
+
+
+def test_h2h_agrega_por_nombre_canonico_ids_duplicados(client, db):
+    """Si un club aparece con team_id distinto en otra temporada (misma marca),
+    el H2H debe agregarlos por nombre canonico y no perder partidos."""
+    from datetime import datetime
+    from app import models
+    db.add(models.Season(id=1, name="Apertura 2024", year=2024, tournament_type="Apertura"))
+    db.add(models.Team(id=227, name="América"))
+    db.add(models.Team(id=9999, name="América"))   # duplicado con otro id
+    db.add(models.Team(id=234, name="Pachuca"))
+    db.flush()
+    db.add(models.Match(season_id=1, home_team_id=227, away_team_id=234,
+                        home_score=1, away_score=0, status="finished",
+                        match_date=datetime(2024, 8, 1)))
+    db.add(models.Match(season_id=1, home_team_id=234, away_team_id=9999,
+                        home_score=2, away_score=2, status="finished",
+                        match_date=datetime(2024, 9, 1)))
+    db.commit()
+    # Consultando por el id 227 se incluye tambien el partido del id 9999 (mismo nombre)
+    r = client.get("/h2h/227/234/summary").json()
+    assert r["played"] == 2
+    assert r["team1"]["wins"] == 1 and r["draws"] == 1
+
+
+def test_matches_sin_season_incluye_todas_las_temporadas(client, db):
+    """GET /matches sin `season` debe devolver partidos de todas las temporadas,
+    no solo la vigente."""
+    from datetime import datetime
+    from app import models
+    db.add(models.Season(id=1, name="Apertura 2024", year=2024, tournament_type="Apertura"))
+    db.add(models.Season(id=2, name="Apertura 2026", year=2026, tournament_type="Apertura"))
+    db.add(models.Team(id=1, name="América"))
+    db.add(models.Team(id=2, name="Pachuca"))
+    db.flush()
+    db.add(models.Match(season_id=1, home_team_id=1, away_team_id=2, home_score=1,
+                        away_score=0, status="finished", match_date=datetime(2024, 8, 1)))
+    db.add(models.Match(season_id=2, home_team_id=2, away_team_id=1, home_score=2,
+                        away_score=2, status="finished", match_date=datetime(2026, 8, 1)))
+    db.commit()
+    r = client.get("/matches", params={"status": "finished", "limit": 100}).json()
+    assert len(r) == 2  # una de cada temporada
+    # filtrando por temporada, solo la pedida
+    r1 = client.get("/matches", params={"status": "finished", "season": "Apertura 2024"}).json()
+    assert len(r1) == 1
