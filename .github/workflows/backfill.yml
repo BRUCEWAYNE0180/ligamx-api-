@@ -1,0 +1,50 @@
+name: Backfill Seasons (manual)
+
+# Carga temporadas PASADAS de Liga MX al historico (BD Neon), de forma manual y
+# no destructiva. Util para engordar la muestra del H2H sin tocar las temporadas
+# ya cargadas. Se dispara a mano (workflow_dispatch).
+#
+# El input `seasons` es una lista `anio:torneo` separada por comas. Por defecto
+# carga los torneos pasados solicitados hacia atras desde 2025.
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Temporadas a cargar (anio:torneo, separadas por comas)'
+        required: true
+        default: '2025:Clausura,2024:Apertura,2024:Clausura,2023:Apertura'
+
+concurrency:
+  group: sync-liga-mx
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/migrate.py
+
+      - name: Run backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEASONS: ${{ inputs.seasons }}
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+        run: python scripts/backfill.py
