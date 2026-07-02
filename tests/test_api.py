@@ -77,6 +77,12 @@ def test_sync_status_sin_datos(client):
     assert r["has_data"] is False
     assert r["last_sync"] is None
     assert r["last_successful_sync"] is None
+    # Resumen de frescura: sin sync exitosa -> marcado como viejo
+    assert r["freshness"]["is_stale"] is True
+    assert r["freshness"]["last_successful_sync_at"] is None
+    # Conteos presentes y en cero (pretemporada / BD vacia)
+    assert r["data_counts"]["teams"] == 0
+    assert r["data_counts"]["matches"] == 0
 
 
 
@@ -1332,3 +1338,78 @@ def test_365_lineup_impact_sin_xi(client, seeded, monkeypatch):
     body = client.get("/365scores/matches/123/lineup-impact").json()
     assert body["disponible"] is False
     assert body["equipos"] == {}
+
+
+# ---------- Robustez: frescura del sync y verificacion end-to-end del bot ----------
+
+def test_sync_status_freshness_fresco(client, db):
+    """Con una sync exitosa reciente, freshness.is_stale debe ser False."""
+    from datetime import datetime
+    from app import models
+    db.add(models.SyncLog(source="espn", status="success", detail="ok",
+                          season="Apertura 2026", teams=18, players=500, matches=153,
+                          started_at=datetime.utcnow(), duration_seconds=42.0,
+                          finished_at=datetime.utcnow()))
+    db.commit()
+    r = client.get("/sync/status").json()
+    assert r["freshness"]["is_stale"] is False
+    assert r["data_age_hours"] is not None and r["data_age_hours"] <= 1
+    assert "frescos" in r["freshness"]["message"]
+
+
+def test_bot_endpoints_end_to_end(client, seeded, db, monkeypatch):
+    """Verificacion end-to-end: TODOS los endpoints que consume el bot Survivor
+    responden 200 (con datos reales sembrados o `disponible: false` limpio),
+    nunca 500. Las fuentes 365Scores se mockean (sin red)."""
+    from app.scrapers import scores365_scraper as s365
+    _seed_player_match_stats(db)  # Henry (id 999, equipo 1) y Rival X (id 998, equipo 2)
+
+    # Mocks de 365Scores (sin red): transfers, porteros y alineaciones.
+    monkeypatch.setattr(s365.Scores365Scraper, "get_transfers",
+                        lambda self, status=None, year=None: {
+                            "season": "Apertura 2026", "disponible": False, "equipos": {}})
+    monkeypatch.setattr(s365.Scores365Scraper, "get_goalkeepers", lambda self: [])
+    monkeypatch.setattr(s365.Scores365Scraper, "get_match_lineups",
+                        lambda self, game_id: {"game_id": game_id, "teams": [
+                            {"team_name": "América", "home_away": "home", "players": [
+                                {"player_id": 999, "name": "Henry Martín", "starter": True}]}]})
+
+    endpoints = [
+        "/standings",
+        "/calendar",
+        "/predict?home=1&away=2",
+        "/365scores/transfers",
+        "/365scores/goalkeepers",
+        "/matches/1/players-to-watch",
+        "/365scores/matches/123/lineups",
+        "/365scores/matches/123/lineup-impact",
+        "/players/discipline",
+        "/h2h/1/2/summary",
+        "/news",
+    ]
+    for path in endpoints:
+        r = client.get(path)
+        assert r.status_code == 200, f"{path} devolvio {r.status_code}: {r.text[:200]}"
+        # y su espejo /v1 tambien responde igual
+        assert client.get("/v1" + path.split("?")[0]).status_code < 500
+
+
+def test_bot_endpoints_pretemporada_sin_datos(client, monkeypatch):
+    """En pretemporada (BD vacia) los endpoints NO deben dar 500: responden
+    vacio o `disponible: false`, sin fabricar datos."""
+    from app.scrapers import scores365_scraper as s365
+    monkeypatch.setattr(s365.Scores365Scraper, "get_transfers",
+                        lambda self, status=None, year=None: {
+                            "season": "Apertura 2026", "disponible": False, "equipos": {}})
+    monkeypatch.setattr(s365.Scores365Scraper, "get_goalkeepers", lambda self: [])
+    monkeypatch.setattr(s365.Scores365Scraper, "get_match_lineups",
+                        lambda self, game_id: {"game_id": game_id, "teams": []})
+
+    # Endpoints que no dependen de ids sembrados
+    for path in ["/standings", "/calendar", "/365scores/transfers",
+                 "/365scores/goalkeepers", "/players/discipline", "/news",
+                 "/365scores/matches/123/lineup-impact"]:
+        r = client.get(path)
+        assert r.status_code < 500, f"{path} devolvio {r.status_code}"
+    # lineup-impact sin XI -> disponible false, no inventa
+    assert client.get("/365scores/matches/123/lineup-impact").json()["disponible"] is False

@@ -1,13 +1,32 @@
 name: Sync Liga MX Data
 
+# Sincronizacion automatica de datos hacia la BD de produccion (Neon).
+#
+# Cadencia: cada 2 horas (12 corridas/dia). Esto mantiene frescos los datos que
+# se asientan DESPUES de los partidos (resultados, tabla, stats por jugador,
+# eventos y alineaciones persistidas). Es mas que suficiente en pretemporada
+# (>= diario) y da ~2h de frescura maxima en dias de jornada.
+#
+# Nota: los datos EN VIVO que consume el bot (marcadores, alineaciones,
+# transfers, porteros via /365scores/*) NO dependen de este sync: esos endpoints
+# pegan directo a 365Scores con cache corto, por lo que ya estan al minuto. El
+# sync alimenta lo historico/acumulado (standings, calendar, predict, discipline,
+# players-to-watch, h2h, news).
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:
+
+# Evita que dos sincronizaciones se solapen (una corrida larga no choca con la
+# siguiente): la nueva espera y la anterior no se cancela a media escritura.
+concurrency:
+  group: sync-liga-mx
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repo
