@@ -3,7 +3,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, engine
+from app.db_identity import db_fingerprint
 from app.dependencies import verify_api_key
 from app.rate_limit import limiter, SYNC_LIMIT
 from app.season import to_naive_utc
@@ -153,6 +154,10 @@ def sync_status(db: Session = Depends(get_db)):
         "data_age_seconds": int(age_seconds) if age_seconds is not None else None,
         "data_age_hours": age_hours,
         "has_data": data_counts["teams"] > 0,
+        "database": {
+            "dialect": engine.dialect.name,
+            "fingerprint": db_fingerprint(),
+        },
         "freshness": {
             "is_stale": is_stale,
             "stale_after_hours": stale_after_hours,

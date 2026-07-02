@@ -42,6 +42,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/migrate.py
 
+      - name: Show DB target (sanitized) + fingerprint
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/db_fingerprint.py
+
       - name: Run backfill
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
