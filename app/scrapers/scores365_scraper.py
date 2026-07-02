@@ -28,6 +28,29 @@ EVENT_RED = 3
 EVENT_GOAL_DISALLOWED = 11
 EVENT_SUBSTITUTION = 1000
 
+# Mapa de nombres de equipo de Liga MX: 365Scores -> ESPN (displayName), para que
+# las transferencias empaten con el resto de la API (equipos, tabla, etc.).
+LIGAMX_TEAM_NAME_MAP = {
+    "Club América": "América",
+    "Atlas": "Atlas",
+    "Atlético San Luis": "Atlético de San Luis",
+    "Chivas de Guadalajara": "Guadalajara",
+    "Club Tijuana": "Tijuana",
+    "Cruz Azul": "Cruz Azul",
+    "Juarez": "FC Juarez",
+    "León": "León",
+    "Monterrey": "Monterrey",
+    "Necaxa": "Necaxa",
+    "Pachuca": "Pachuca",
+    "Puebla": "Puebla",
+    "Pumas": "Pumas UNAM",
+    "Querétaro FC": "Querétaro",
+    "Santos Laguna": "Santos",
+    "Toluca": "Toluca",
+    "U.A.N.L. - Tigres": "Tigres UANL",
+    "Atlante": "Atlante",
+}
+
 
 def _status_from_group(game: Dict) -> str:
     sg = game.get("statusGroup")
@@ -531,6 +554,87 @@ class Scores365Scraper(BaseScraper):
                 return -1
         out.sort(key=lambda g: _cs(g.get("clean_sheets")), reverse=True)
         return out
+
+    def get_transfers(self, status: str = None, year: int = None) -> Dict:
+        """Mercado de fichajes de Liga MX desde 365Scores, agrupado por equipo.
+
+        Devuelve, por cada equipo de Liga MX, sus `altas` (jugadores que ENTRAN)
+        y `bajas` (jugadores que SALEN), con el club de origen/destino y el tipo
+        de operacion ("transfer" o "loan"). Los nombres de los equipos de Liga MX
+        se normalizan al mismo texto que usa ESPN (displayName) para que empaten
+        con el resto de la API.
+
+        - status: filtra por estado ("confirmado" | "rumor"). Por defecto incluye
+          ambos (confirmados y rumores), tal como los publica 365Scores.
+        - year: solo fichajes de ese anio (por defecto el anio en curso, para
+          mostrar el mercado actual y no historicos).
+
+        Si 365Scores no expone transferencias, devuelve equipos vacio y
+        "disponible": false (el proyecto no fabrica datos)."""
+        from app.season import current_season_name
+        season = current_season_name()
+        if year is None:
+            year = datetime.now(timezone.utc).year
+        empty = {"season": season, "disponible": False, "equipos": {}}
+        try:
+            data = self._get_json("transfers/", {"competitions": COMPETITION_ID})
+        except Exception as e:
+            logger.warning(f"365scores transfers fallo: {e}")
+            return empty
+
+        competitors = {c["id"]: c for c in data.get("competitors", []) if c.get("id")}
+        athletes = {a["id"]: a for a in data.get("athletes", []) if a.get("id")}
+        transfers = data.get("transfers") or []
+        want_status = status.strip().lower() if status else None
+
+        def _is_ligamx(tid):
+            c = competitors.get(tid) or {}
+            return c.get("mainCompetitionId") == COMPETITION_ID or COMPETITION_ID in (c.get("competitions") or [])
+
+        def _team_name(tid):
+            c = competitors.get(tid) or {}
+            raw = c.get("name")
+            return LIGAMX_TEAM_NAME_MAP.get(raw, raw)
+
+        def _tipo(t):
+            price = (t.get("price") or "").lower()
+            if t.get("type") == 3 or "préstamo" in price or "prestamo" in price:
+                return "loan"
+            return "transfer"
+
+        equipos = {}
+
+        def _bucket(team_name):
+            return equipos.setdefault(team_name, {"altas": [], "bajas": []})
+
+        for t in transfers:
+            if year is not None and (t.get("time") or "")[:4] != str(year):
+                continue
+            if want_status and (t.get("statusName") or "").lower() != want_status:
+                continue
+            origin, target = t.get("origin"), t.get("target")
+            if origin == target:
+                continue  # extension/renovacion de contrato: ni alta ni baja
+            a = athletes.get(t.get("athleteId")) or {}
+            jugador = a.get("name") or a.get("shortName")
+            if not jugador:
+                continue
+            tipo = _tipo(t)
+            if _is_ligamx(target):
+                _bucket(_team_name(target))["altas"].append({
+                    "jugador": jugador,
+                    "desde": _team_name(origin),
+                    "tipo": tipo,
+                })
+            if _is_ligamx(origin):
+                _bucket(_team_name(origin))["bajas"].append({
+                    "jugador": jugador,
+                    "hacia": _team_name(target),
+                    "tipo": tipo,
+                })
+
+        equipos = {k: equipos[k] for k in sorted(equipos)}
+        return {"season": season, "disponible": bool(equipos), "equipos": equipos}
 
     def get_match_heatmaps(self, game_id, game: Dict = None) -> Dict:
         """Mapas de calor (heatmap) por jugador del partido: URL de imagen lista
