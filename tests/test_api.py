@@ -1494,3 +1494,36 @@ def test_matches_sin_season_incluye_todas_las_temporadas(client, db):
     # filtrando por temporada, solo la pedida
     r1 = client.get("/matches", params={"status": "finished", "season": "Apertura 2024"}).json()
     assert len(r1) == 1
+
+
+# ---------- Identidad/huella de la BD (diagnostico de entorno) ----------
+
+def test_db_fingerprint_estable_y_sin_credenciales():
+    from app.db_identity import db_fingerprint, db_target
+    url = "postgresql://user:secretpass@ep-cool-123.us-east-2.aws.neon.tech/ligamx"
+    fp = db_fingerprint(url)
+    assert len(fp) == 12
+    # No filtra credenciales
+    assert "secretpass" not in fp and "user" not in fp
+    # Estable: misma URL -> misma huella
+    assert db_fingerprint(url) == fp
+    # El endpoint pooled y el directo (misma base Neon) dan la MISMA huella
+    pooled = "postgresql://user:secretpass@ep-cool-123-pooler.us-east-2.aws.neon.tech/ligamx"
+    assert db_fingerprint(pooled) == fp
+    # target sanitizado no incluye credenciales
+    t = db_target(url)
+    assert t["host"] == "ep-cool-123.us-east-2.aws.neon.tech" and t["dbname"] == "ligamx"
+
+
+def test_db_fingerprint_distintas_bases_distinta_huella():
+    from app.db_identity import db_fingerprint
+    a = db_fingerprint("postgresql://u:p@host-a.neon.tech/ligamx")
+    b = db_fingerprint("postgresql://u:p@host-b.neon.tech/ligamx")
+    c = db_fingerprint("postgresql://u:p@host-a.neon.tech/otra")
+    assert a != b and a != c
+
+
+def test_sync_status_expone_fingerprint(client):
+    r = client.get("/sync/status").json()
+    assert "database" in r
+    assert "fingerprint" in r["database"] and len(r["database"]["fingerprint"]) == 12
