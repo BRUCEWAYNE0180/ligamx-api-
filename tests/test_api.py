@@ -1274,3 +1274,61 @@ def test_365_transfers_sin_datos(client, monkeypatch):
     assert body["disponible"] is False
     assert body["equipos"] == {}
     assert body["season"].startswith(("Apertura", "Clausura"))
+
+
+# ---------- Impacto del XI confirmado (lineup-impact, 365Scores + BD) ----------
+
+def _seed_lineup_impact_stats(db):
+    """3 jugadores del equipo 1 (América) con produccion conocida (total = 10):
+    501 -> 8 (goles+asist), 502 -> 2, 503 -> 0."""
+    from app import models
+    db.add(models.PlayerMatchStat(match_id=1, player_id=501, player_name="Estrella",
+                                  team_id=1, team_name="América", season="Apertura 2026",
+                                  goals=5, assists=3))
+    db.add(models.PlayerMatchStat(match_id=1, player_id=502, player_name="Medio",
+                                  team_id=1, team_name="América", season="Apertura 2026",
+                                  goals=1, assists=1))
+    db.add(models.PlayerMatchStat(match_id=1, player_id=503, player_name="Suplente",
+                                  team_id=1, team_name="América", season="Apertura 2026",
+                                  goals=0, assists=0))
+    db.commit()
+
+
+def test_365_lineup_impact(client, seeded, db, monkeypatch):
+    from app.scrapers import scores365_scraper
+    _seed_lineup_impact_stats(db)
+    # XI: 502 y 503 arrancan; 501 (el mas importante) esta en la banca.
+    fake = {"game_id": 123, "teams": [
+        {"team_name": "Club América", "home_away": "home", "players": [
+            {"player_id": 501, "name": "Estrella", "starter": False},
+            {"player_id": 502, "name": "Medio", "starter": True},
+            {"player_id": 503, "name": "Suplente", "starter": True},
+        ]},
+    ]}
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_match_lineups",
+                        lambda self, game_id: fake)
+    r = client.get("/365scores/matches/123/lineup-impact")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["disponible"] is True
+    # Nombre normalizado a ESPN (via team_id detectado en la BD)
+    ame = body["equipos"]["América"]
+    # Titulares 502 (20%) + 503 (0%) => fuerza 20.0
+    assert ame["fuerza_xi_pct"] == 20.0
+    # 501 (80%) es el mas importante y NO arranca -> ausente clave
+    assert {"jugador": "Estrella", "importancia_pct": 80.0} in ame["ausentes_clave"]
+    # 502 arranca y esta en el top -> titular clave
+    assert {"jugador": "Medio", "importancia_pct": 20.0} in ame["titulares_clave"]
+
+
+def test_365_lineup_impact_sin_xi(client, seeded, monkeypatch):
+    from app.scrapers import scores365_scraper
+    # 365Scores aun no publica el XI (sin titulares) -> no disponible, sin inventar.
+    fake = {"game_id": 123, "teams": [
+        {"team_name": "Club América", "home_away": "home", "players": []},
+    ]}
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "get_match_lineups",
+                        lambda self, game_id: fake)
+    body = client.get("/365scores/matches/123/lineup-impact").json()
+    assert body["disponible"] is False
+    assert body["equipos"] == {}
