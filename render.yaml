@@ -1,3 +1,20 @@
+# Blueprint del web service.
+#
+# IMPORTANTE — base de datos:
+# La API usa Neon (Postgres gestionado), NO una base provisionada por Render.
+# Por eso NO declaramos aqui ninguna `databases:` ni enlazamos DATABASE_URL con
+# `fromDatabase`: si lo hicieramos, un redeploy desde este blueprint reescribiria
+# DATABASE_URL apuntando el web service al Postgres de Render y lo desincronizaria
+# de Neon (bug que ya vivimos: el backfill escribia en una base y la API leia otra).
+#
+# DATABASE_URL se define A MANO como variable de entorno del servicio en el
+# dashboard de Render (Environment) y DEBE ser EXACTAMENTE la misma cadena de Neon
+# que el secret `DATABASE_URL` de GitHub Actions (workflows sync.yml y backfill.yml).
+# Si difieren, los datos se parten en dos bases. Para verificar que coinciden sin
+# exponer credenciales, compara la huella:
+#   - Web service:  GET /sync/status  -> database.fingerprint
+#   - GitHub Actions: paso "Show DB target + fingerprint" en el log del workflow
+# Deben ser identicas.
 services:
   - type: web
     name: ligamx-api
@@ -11,17 +28,11 @@ services:
       # Si prefieres que el propio web service haga el sync cada 6h, pon "true".
       - key: RUN_SCHEDULER
         value: "false"
-      # IMPORTANTE: define el valor real en el dashboard de Render (Environment),
-      # no lo dejes en el repo.
+      # Se definen en el dashboard de Render (Environment), NO en el repo:
+      #  - SYNC_API_KEY: clave para operaciones sensibles (sync/backfill).
+      #  - DATABASE_URL: cadena de Neon; DEBE coincidir con el secret homonimo de
+      #    GitHub Actions. No se enlaza con fromDatabase a proposito (ver nota arriba).
       - key: SYNC_API_KEY
         sync: false
       - key: DATABASE_URL
-        fromDatabase:
-          name: ligamx-db
-          property: connectionString
-
-databases:
-  - name: ligamx-db
-    databaseName: ligamx
-    user: ligamx
-    plan: free
+        sync: false
