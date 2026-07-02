@@ -1,5 +1,7 @@
+import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import verify_api_key
@@ -83,8 +85,11 @@ def link_player_365(
 
 @router.get("/sync/status")
 def sync_status(db: Session = Depends(get_db)):
-    """Estado y frescura de los datos: ultimo sync, si fue exitoso y hace
-    cuanto corrio. Util para monitoreo y para confiar en la API."""
+    """Estado y frescura de los datos: ultimo sync, si fue exitoso, hace cuanto
+    corrio y un resumen (`freshness`) que marca si los datos estan viejos segun
+    un umbral (DATA_STALE_AFTER_HOURS, 6h por defecto). Incluye `data_counts`
+    (cuan poblada esta la BD; en pretemporada 0 es correcto, no un error) y la
+    fecha del partido mas reciente. Util para monitoreo y para confiar en la API."""
     last = db.query(models.SyncLog).order_by(models.SyncLog.finished_at.desc()).first()
     last_success = (
         db.query(models.SyncLog)
@@ -112,10 +117,49 @@ def sync_status(db: Session = Depends(get_db)):
     if last_success and last_success.finished_at:
         age_seconds = (datetime.utcnow() - to_naive_utc(last_success.finished_at)).total_seconds()
 
+    # Umbral de obsolescencia (horas). El sync corre cada 2h; damos margen para
+    # una corrida perdida antes de marcar los datos como "viejos".
+    try:
+        stale_after_hours = float(os.getenv("DATA_STALE_AFTER_HOURS", "6"))
+    except ValueError:
+        stale_after_hours = 6.0
+
+    age_hours = round(age_seconds / 3600, 1) if age_seconds is not None else None
+    is_stale = age_seconds is None or age_seconds > stale_after_hours * 3600
+
+    if age_seconds is None:
+        message = "Sin sincronizaciones exitosas todavia."
+    elif is_stale:
+        message = f"Datos posiblemente viejos: ultima sync exitosa hace {age_hours}h (umbral {stale_after_hours}h)."
+    else:
+        message = f"Datos frescos: ultima sync exitosa hace {age_hours}h."
+
+    # Conteos para saber de un vistazo QUE tan poblada esta la BD (util en
+    # pretemporada: vacio/0 es correcto, no un error).
+    newest_match = db.query(func.max(models.Match.match_date)).scalar()
+    data_counts = {
+        "teams": db.query(models.Team).count(),
+        "players": db.query(models.Player).count(),
+        "matches": db.query(models.Match).count(),
+        "finished_matches": db.query(models.Match).filter(models.Match.status == "finished").count(),
+        "standings": db.query(models.Standing).count(),
+        "player_match_stats": db.query(models.PlayerMatchStat).count(),
+        "news": db.query(models.News).count(),
+    }
+
     return {
         "last_sync": serialize(last),
         "last_successful_sync": serialize(last_success),
         "data_age_seconds": int(age_seconds) if age_seconds is not None else None,
-        "data_age_hours": round(age_seconds / 3600, 1) if age_seconds is not None else None,
-        "has_data": db.query(models.Team).count() > 0,
+        "data_age_hours": age_hours,
+        "has_data": data_counts["teams"] > 0,
+        "freshness": {
+            "is_stale": is_stale,
+            "stale_after_hours": stale_after_hours,
+            "data_age_hours": age_hours,
+            "last_successful_sync_at": last_success.finished_at if last_success else None,
+            "message": message,
+        },
+        "data_counts": data_counts,
+        "newest_match_date": newest_match,
     }
