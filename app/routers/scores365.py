@@ -115,3 +115,17 @@ def match_shots(game_id: int):
 def match_top_performers(game_id: int):
     """Mejores jugadores del partido por posicion (local y visitante)."""
     return Scores365Scraper().get_match_top_performers(game_id)
+
+
+@router.get("/transfers")
+@cached(600)
+def transfers(status: str = Query(None, description="Filtra por estado: confirmado | rumor"),
+              year: int = Query(None, description="Anio del mercado (por defecto el actual, ej. 2026)")):
+    """Mercado de fichajes de Liga MX AGRUPADO POR EQUIPO. Para cada equipo
+    devuelve sus `altas` (jugadores que entran) y `bajas` (los que salen), con el
+    club de origen/destino y el tipo de operacion ("transfer" o "loan"). Los
+    nombres de equipo se normalizan a los de ESPN para que empaten con el resto
+    de la API. Si 365Scores no expone datos, devuelve `equipos: {}` y
+    `disponible: false` (no se fabrican datos). Por defecto muestra el mercado
+    del anio en curso."""
+    return Scores365Scraper().get_transfers(status=status, year=year)

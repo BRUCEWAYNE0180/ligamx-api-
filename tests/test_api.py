@@ -1188,3 +1188,89 @@ def test_seasons_compare(client, seeded, db):
 
 def test_seasons_compare_404(client, seeded):
     assert client.get("/seasons/compare", params={"a": "Apertura 2026", "b": "Clausura 2099"}).status_code == 404
+
+
+# ---------- Transferencias / fichajes (365Scores) ----------
+
+# Payload minimo imitando la respuesta real de 365Scores (endpoint transfers/):
+# dos equipos de Liga MX (mainCompetitionId=141) y un club extranjero.
+_FAKE_TRANSFERS = {
+    "competitors": [
+        {"id": 100, "name": "Club América", "mainCompetitionId": 141},
+        {"id": 200, "name": "Chivas de Guadalajara", "mainCompetitionId": 141},
+        {"id": 300, "name": "Celta de Vigo", "mainCompetitionId": 99},
+    ],
+    "athletes": [
+        {"id": 1, "name": "Borja Iglesias"},
+        {"id": 2, "name": "Kevin Álvarez"},
+        {"id": 3, "name": "Renovado"},
+    ],
+    "transfers": [
+        # Alta a América desde club extranjero (compra)
+        {"athleteId": 1, "origin": 300, "target": 100, "type": 2,
+         "price": "-", "statusName": "Confirmado", "time": "2026-07-01T10:00:00"},
+        # Prestamo de América a Chivas: baja para América, alta para Chivas
+        {"athleteId": 2, "origin": 100, "target": 200, "type": 3,
+         "price": "Préstamo", "statusName": "Rumor", "time": "2026-07-02T10:00:00"},
+        # Renovacion (origin == target): ni alta ni baja
+        {"athleteId": 3, "origin": 100, "target": 100, "type": 8,
+         "price": "Extensión de contrato", "statusName": "Confirmado", "time": "2026-07-03T10:00:00"},
+        # Fichaje de otro anio: debe filtrarse por defecto (year actual)
+        {"athleteId": 1, "origin": 200, "target": 300, "type": 2,
+         "price": "-", "statusName": "Confirmado", "time": "2020-01-01T10:00:00"},
+    ],
+}
+
+
+def _patch_transfers_http(monkeypatch, payload=_FAKE_TRANSFERS):
+    from app.scrapers import scores365_scraper
+    monkeypatch.setattr(scores365_scraper.Scores365Scraper, "_get_json",
+                        lambda self, path, params=None, retries=3: payload)
+
+
+def test_365_transfers_agrupado(client, monkeypatch):
+    _patch_transfers_http(monkeypatch)
+    r = client.get("/365scores/transfers", params={"year": 2026})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["disponible"] is True
+    equipos = body["equipos"]
+    # Nombres normalizados al estilo ESPN
+    assert "América" in equipos and "Guadalajara" in equipos
+    ame = equipos["América"]
+    # Alta: Borja Iglesias desde Celta de Vigo (compra = transfer)
+    assert {"jugador": "Borja Iglesias", "desde": "Celta de Vigo", "tipo": "transfer"} in ame["altas"]
+    # Baja: Kevin a Guadalajara en prestamo (loan)
+    assert {"jugador": "Kevin Álvarez", "hacia": "Guadalajara", "tipo": "loan"} in ame["bajas"]
+    # La renovacion (origin==target) no cuenta como alta ni baja
+    assert all(a["jugador"] != "Renovado" for a in ame["altas"])
+    assert all(b["jugador"] != "Renovado" for b in ame["bajas"])
+    # Guadalajara recibe a Kevin (alta en prestamo)
+    gdl = equipos["Guadalajara"]
+    assert {"jugador": "Kevin Álvarez", "desde": "América", "tipo": "loan"} in gdl["altas"]
+
+
+def test_365_transfers_filtra_por_anio(client, monkeypatch):
+    _patch_transfers_http(monkeypatch)
+    # Sin fichajes de 2020 en el resultado por defecto (year actual = 2026)
+    body = client.get("/365scores/transfers", params={"year": 2026}).json()
+    # El fichaje de 2020 iba de Chivas de Guadalajara a Celta; no debe aparecer
+    gdl = body["equipos"].get("Guadalajara", {"bajas": []})
+    assert all(b["hacia"] != "Celta de Vigo" for b in gdl.get("bajas", []))
+
+
+def test_365_transfers_filtra_por_status(client, monkeypatch):
+    _patch_transfers_http(monkeypatch)
+    body = client.get("/365scores/transfers", params={"year": 2026, "status": "confirmado"}).json()
+    # Solo confirmados: la alta de Borja (Confirmado) sigue; el prestamo (Rumor) se va
+    ame = body["equipos"]["América"]
+    assert any(a["jugador"] == "Borja Iglesias" for a in ame["altas"])
+    assert ame["bajas"] == []
+
+
+def test_365_transfers_sin_datos(client, monkeypatch):
+    _patch_transfers_http(monkeypatch, payload={"competitors": [], "athletes": [], "transfers": []})
+    body = client.get("/365scores/transfers").json()
+    assert body["disponible"] is False
+    assert body["equipos"] == {}
+    assert body["season"].startswith(("Apertura", "Clausura"))
